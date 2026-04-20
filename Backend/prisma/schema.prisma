@@ -1,0 +1,62 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Core user account for the platform.
+model User {
+  id                String             @id @default(cuid())
+  email             String             @unique
+  name              String?
+  interviewSessions InterviewSession[]
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+// One end-to-end interview run started by a user.
+model InterviewSession {
+  id              String           @id @default(cuid())
+  userId          String
+  title           String?
+  status          String           @default("active")
+  startedAt       DateTime         @default(now())
+  endedAt         DateTime?
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages        Message[]
+  codeSubmissions CodeSubmission[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([userId])
+}
+
+// Chat-like exchange inside an interview session.
+model Message {
+  id                 String           @id @default(cuid())
+  interviewSessionId String
+  role               String
+  content            String
+  interviewSession   InterviewSession @relation(fields: [interviewSessionId], references: [id], onDelete: Cascade)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([interviewSessionId])
+}
+
+// Code snippets submitted by a candidate during a session.
+model CodeSubmission {
+  id                 String           @id @default(cuid())
+  interviewSessionId String
+  language           String
+  code               String
+  notes              String?
+  interviewSession   InterviewSession @relation(fields: [interviewSessionId], references: [id], onDelete: Cascade)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  @@index([interviewSessionId])
+}
