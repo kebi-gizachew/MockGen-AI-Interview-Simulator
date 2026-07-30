@@ -1,12 +1,8 @@
 const OpenAI = require("openai");
 const env = require("../../../config/env");
+const { AI_RESPONSE_TYPES } = require("../../../constants/interview.constants");
 
-const OUTPUT_TYPES = {
-  QUESTION: "question",
-  FEEDBACK: "feedback",
-};
-
-const createSystemPrompt = () =>
+const createChatSystemPrompt = () =>
   [
     "You are an AI Interview Coach.",
     "Return ONLY valid JSON with this exact shape:",
@@ -18,7 +14,29 @@ const createSystemPrompt = () =>
     "- Keep message concise and interview-focused.",
   ].join("\n");
 
-const parseModelResponse = (rawText) => {
+const createOpeningSystemPrompt = () =>
+  [
+    "You are an AI Interview Coach starting a mock technical interview.",
+    "Return ONLY valid JSON with this exact shape:",
+    '{ "type": "question", "message": "string", "score": 0 }',
+    "Rules:",
+    "- Greet the candidate briefly and ask one strong opening technical question.",
+    "- Tailor the question to the interview title when provided.",
+    "- score must always be 0.",
+  ].join("\n");
+
+const createSummarySystemPrompt = () =>
+  [
+    "You are an AI Interview Coach providing a final interview debrief.",
+    "Return ONLY valid JSON with this exact shape:",
+    '{ "type": "summary", "message": "string", "score": number }',
+    "Rules:",
+    '- "type" must be "summary".',
+    "- Summarize strengths, weaknesses, and concrete next steps.",
+    "- score must be an integer between 0 and 100 representing overall performance.",
+  ].join("\n");
+
+const parseModelResponse = (rawText, allowedTypes) => {
   let parsed;
   try {
     parsed = JSON.parse(rawText);
@@ -28,7 +46,7 @@ const parseModelResponse = (rawText) => {
 
   if (
     !parsed ||
-    (parsed.type !== OUTPUT_TYPES.QUESTION && parsed.type !== OUTPUT_TYPES.FEEDBACK) ||
+    !allowedTypes.includes(parsed.type) ||
     typeof parsed.message !== "string" ||
     typeof parsed.score !== "number"
   ) {
@@ -36,14 +54,17 @@ const parseModelResponse = (rawText) => {
   }
 
   const normalizedScore = Math.max(0, Math.min(100, Math.round(parsed.score)));
+  const score =
+    parsed.type === AI_RESPONSE_TYPES.QUESTION ? 0 : normalizedScore;
+
   return {
     type: parsed.type,
     message: parsed.message.trim(),
-    score: parsed.type === OUTPUT_TYPES.QUESTION ? 0 : normalizedScore,
+    score,
   };
 };
 
-const generateOpenAiInterviewResponse = async ({ userMessage, interviewContext }) => {
+const callOpenAi = async ({ systemPrompt, payload }) => {
   if (!env.openAiApiKey) {
     throw new Error("OPENAI_API_KEY is missing.");
   }
@@ -53,14 +74,8 @@ const generateOpenAiInterviewResponse = async ({ userMessage, interviewContext }
     model: env.openAiModel,
     temperature: 0.3,
     messages: [
-      { role: "system", content: createSystemPrompt() },
-      {
-        role: "user",
-        content: JSON.stringify({
-          userMessage,
-          interviewContext,
-        }),
-      },
+      { role: "system", content: systemPrompt },
+      { role: "user", content: JSON.stringify(payload) },
     ],
   });
 
@@ -69,9 +84,41 @@ const generateOpenAiInterviewResponse = async ({ userMessage, interviewContext }
     throw new Error("OpenAI did not return any content.");
   }
 
-  return parseModelResponse(content);
+  return content;
+};
+
+const generateOpenAiInterviewResponse = async ({ userMessage, interviewContext }) => {
+  const content = await callOpenAi({
+    systemPrompt: createChatSystemPrompt(),
+    payload: { userMessage, interviewContext },
+  });
+
+  return parseModelResponse(content, [
+    AI_RESPONSE_TYPES.QUESTION,
+    AI_RESPONSE_TYPES.FEEDBACK,
+  ]);
+};
+
+const generateOpenAiOpeningQuestion = async ({ interviewContext }) => {
+  const content = await callOpenAi({
+    systemPrompt: createOpeningSystemPrompt(),
+    payload: { interviewContext },
+  });
+
+  return parseModelResponse(content, [AI_RESPONSE_TYPES.QUESTION]);
+};
+
+const generateOpenAiFinalSummary = async ({ interviewContext }) => {
+  const content = await callOpenAi({
+    systemPrompt: createSummarySystemPrompt(),
+    payload: { interviewContext },
+  });
+
+  return parseModelResponse(content, [AI_RESPONSE_TYPES.SUMMARY]);
 };
 
 module.exports = {
   generateOpenAiInterviewResponse,
+  generateOpenAiOpeningQuestion,
+  generateOpenAiFinalSummary,
 };

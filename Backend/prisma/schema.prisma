@@ -7,10 +7,22 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum SessionStatus {
+  active
+  completed
+}
+
+enum MessageRole {
+  user
+  assistant
+  system
+}
+
 // Core user account for the platform.
 model User {
   id                String             @id @default(cuid())
   email             String             @unique
+  password          String
   name              String?
   interviewSessions InterviewSession[]
   createdAt         DateTime           @default(now())
@@ -22,24 +34,26 @@ model InterviewSession {
   id              String           @id @default(cuid())
   userId          String
   title           String?
-  status          String           @default("active")
+  status          SessionStatus    @default(active)
   startedAt       DateTime         @default(now())
   endedAt         DateTime?
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages        Message[]
   codeSubmissions CodeSubmission[]
   createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  updatedAt       DateTime           @updatedAt
 
   @@index([userId])
+  @@index([userId, status])
 }
 
 // Chat-like exchange inside an interview session.
 model Message {
   id                 String           @id @default(cuid())
   interviewSessionId String
-  role               String
+  role               MessageRole
   content            String
+  metadata           Json?
   interviewSession   InterviewSession @relation(fields: [interviewSessionId], references: [id], onDelete: Cascade)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt

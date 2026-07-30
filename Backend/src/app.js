@@ -1,18 +1,17 @@
 const express = require("express");
 const cors = require("cors");
-const healthRoutes = require("./routes/health.routes");
+const apiRoutes = require("./routes");
+const notFoundMiddleware = require("./middlewares/notFound.middleware");
 const errorMiddleware = require("./middlewares/error.middleware");
 
 const app = express();
 
-// Core middleware
 app.use(cors());
 app.use(express.json());
 
-// API routes
-app.use("/", healthRoutes);
+app.use("/api", apiRoutes);
 
-// Centralized error handling (must be registered last)
+app.use(notFoundMiddleware);
 app.use(errorMiddleware);
 
 module.exports = app;

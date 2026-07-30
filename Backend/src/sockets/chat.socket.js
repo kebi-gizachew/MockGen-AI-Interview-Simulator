@@ -1,9 +1,13 @@
 const messageService = require("../services/message.service");
+const interviewService = require("../services/interview.service");
+const aiInterviewService = require("../services/aiInterview.service");
+const { SESSION_STATUS } = require("../constants/interview.constants");
 
 const SOCKET_EVENTS = {
   JOIN_SESSION: "join_session",
   SEND_MESSAGE: "send_message",
   RECEIVE_MESSAGE: "receive_message",
+  AI_RESPONSE: "ai_response",
   ERROR: "socket_error",
 };
 
@@ -21,59 +25,74 @@ const registerChatSocketHandlers = (io, socket) => {
         return;
       }
 
-      const session = await messageService.findSessionById(sessionId);
-      if (!session) {
-        socket.emit(SOCKET_EVENTS.ERROR, {
-          message: "Interview session not found",
-        });
-        return;
-      }
+      await interviewService.getSessionById({
+        sessionId,
+        userId: socket.user.id,
+      });
 
       socket.join(buildRoomName(sessionId));
       socket.emit("joined_session", { sessionId });
     } catch (error) {
-      socket.emit(SOCKET_EVENTS.ERROR, { message: "Unable to join session" });
+      socket.emit(SOCKET_EVENTS.ERROR, {
+        message: error.message || "Unable to join session",
+      });
     }
   });
 
   socket.on(SOCKET_EVENTS.SEND_MESSAGE, async (payload = {}) => {
     try {
-      const { sessionId, role, content } = payload;
+      const { sessionId, message } = payload;
 
-      if (!sessionId || !role || !content) {
+      if (!sessionId || !message) {
         socket.emit(SOCKET_EVENTS.ERROR, {
-          message: "sessionId, role, and content are required for send_message",
+          message: "sessionId and message are required for send_message",
         });
         return;
       }
 
       const session = await messageService.findSessionById(sessionId);
-      if (!session) {
+      if (!session || session.userId !== socket.user.id) {
         socket.emit(SOCKET_EVENTS.ERROR, {
           message: "Interview session not found",
         });
         return;
       }
 
-      const savedMessage = await messageService.createMessage({
-        interviewSessionId: sessionId,
-        role,
-        content,
+      if (session.status !== SESSION_STATUS.ACTIVE) {
+        socket.emit(SOCKET_EVENTS.ERROR, {
+          message: "This interview session is no longer active.",
+        });
+        return;
+      }
+
+      const result = await aiInterviewService.processCandidateMessage({
+        sessionId,
+        userId: socket.user.id,
+        message,
       });
 
       io.to(buildRoomName(sessionId)).emit(SOCKET_EVENTS.RECEIVE_MESSAGE, {
-        id: savedMessage.id,
-        sessionId: savedMessage.interviewSessionId,
-        role: savedMessage.role,
-        content: savedMessage.content,
-        createdAt: savedMessage.createdAt,
+        id: result.userMessage.id,
+        sessionId: result.userMessage.interviewSessionId,
+        role: result.userMessage.role,
+        content: result.userMessage.content,
+        createdAt: result.userMessage.createdAt,
+      });
+
+      io.to(buildRoomName(sessionId)).emit(SOCKET_EVENTS.AI_RESPONSE, {
+        userMessage: result.userMessage,
+        assistantMessage: result.assistantMessage,
+        aiResponse: result.aiResponse,
       });
     } catch (error) {
-      socket.emit(SOCKET_EVENTS.ERROR, { message: "Unable to send message" });
+      socket.emit(SOCKET_EVENTS.ERROR, {
+        message: error.message || "Unable to send message",
+      });
     }
   });
 };
 
 module.exports = {
   registerChatSocketHandlers,
+  SOCKET_EVENTS,
 };

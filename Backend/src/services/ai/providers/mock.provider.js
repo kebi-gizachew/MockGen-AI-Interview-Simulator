@@ -1,7 +1,4 @@
-const OUTPUT_TYPES = {
-  QUESTION: "question",
-  FEEDBACK: "feedback",
-};
+const { AI_RESPONSE_TYPES } = require("../../../constants/interview.constants");
 
 const normalizeContext = (interviewContext) => {
   if (!interviewContext) return "";
@@ -24,7 +21,7 @@ const generateMockInterviewResponse = async ({ userMessage, interviewContext }) 
 
   if (shouldReturnFeedback) {
     return {
-      type: OUTPUT_TYPES.FEEDBACK,
+      type: AI_RESPONSE_TYPES.FEEDBACK,
       message:
         "Good attempt. Clarify trade-offs and mention time/space complexity for a stronger interview response.",
       score: 72,
@@ -32,13 +29,35 @@ const generateMockInterviewResponse = async ({ userMessage, interviewContext }) 
   }
 
   return {
-    type: OUTPUT_TYPES.QUESTION,
+    type: AI_RESPONSE_TYPES.QUESTION,
     message:
       "Design a rate limiter for a high-traffic API. Explain your data model and how you handle distributed servers.",
     score: 0,
   };
 };
 
+const generateMockOpeningQuestion = async ({ interviewContext }) => {
+  const title = interviewContext?.title || "Mock Interview";
+
+  return {
+    type: AI_RESPONSE_TYPES.QUESTION,
+    message: `Welcome to your ${title}. Let's begin with a warm-up: explain the difference between concurrency and parallelism, and when you would choose each approach.`,
+    score: 0,
+  };
+};
+
+const generateMockFinalSummary = async ({ interviewContext }) => {
+  const messageCount = interviewContext?.history?.length || 0;
+
+  return {
+    type: AI_RESPONSE_TYPES.SUMMARY,
+    message: `Interview complete. You answered ${messageCount} exchanges. Strengths: clear communication and structured thinking. Areas to improve: dive deeper into trade-offs and quantify complexity when discussing solutions.`,
+    score: 75,
+  };
+};
+
 module.exports = {
   generateMockInterviewResponse,
+  generateMockOpeningQuestion,
+  generateMockFinalSummary,
 };

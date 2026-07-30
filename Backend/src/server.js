@@ -17,6 +17,17 @@ const startServer = async () => {
         `Server + Socket.io running in ${env.nodeEnv} mode on http://localhost:${env.port}`
       );
     });
+
+    const shutdown = async (signal) => {
+      console.log(`\n${signal} received. Shutting down gracefully...`);
+      httpServer.close(async () => {
+        await prisma.$disconnect();
+        process.exit(0);
+      });
+    };
+
+    process.on("SIGTERM", () => shutdown("SIGTERM"));
+    process.on("SIGINT", () => shutdown("SIGINT"));
   } catch (error) {
     console.error("Failed to start server:", error);
     process.exit(1);
