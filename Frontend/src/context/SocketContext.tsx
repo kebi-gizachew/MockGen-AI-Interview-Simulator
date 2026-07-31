@@ -1,6 +1,7 @@
-import React, { createContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useEffect, useState, ReactNode, useContext } from 'react';
 import { io, Socket } from 'socket.io-client';
-import { SOCKET_URL, LOCAL_STORAGE_KEYS } from '../utils/constants';
+import { SOCKET_URL } from '../utils/constants';
+import { AuthContext } from './AuthContext';
 
 export interface SocketContextType {
   socket: Socket | null;
@@ -10,12 +11,13 @@ export interface SocketContextType {
 export const SocketContext = createContext<SocketContextType | null>(null);
 
 export const SocketProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const authContext = useContext(AuthContext);
+  const token = authContext?.token;
+
   const [socket, setSocket] = useState<Socket | null>(null);
   const [isConnected, setIsConnected] = useState<boolean>(false);
 
   useEffect(() => {
-    const token = localStorage.getItem(LOCAL_STORAGE_KEYS.TOKEN);
-
     if (!token) {
       if (socket) {
         socket.disconnect();
@@ -51,7 +53,7 @@ export const SocketProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     return () => {
       newSocket.disconnect();
     };
-  }, [localStorage.getItem(LOCAL_STORAGE_KEYS.TOKEN)]);
+  }, [token]);
 
   return (
     <SocketContext.Provider value={{ socket, isConnected }}>

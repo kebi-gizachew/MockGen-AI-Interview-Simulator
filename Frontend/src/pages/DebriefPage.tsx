@@ -159,52 +159,54 @@ export const DebriefPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="flex border-b border-slate-800 gap-4">
-          <button
-            onClick={() => setActiveTab('feedback')}
-            className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 transition-all ${
-              activeTab === 'feedback'
-                ? 'border-purple-500 text-purple-300'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Award className="w-4 h-4" />
-            Evaluation & Breakdown
-          </button>
-          <button
-            onClick={() => setActiveTab('history')}
-            className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 transition-all ${
-              activeTab === 'history'
-                ? 'border-purple-500 text-purple-300'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <TrendingUp className="w-4 h-4" />
-            Previous Performance Comparison
-          </button>
-          <button
-            onClick={() => setActiveTab('transcript')}
-            className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 transition-all ${
-              activeTab === 'transcript'
-                ? 'border-purple-500 text-purple-300'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <MessageSquare className="w-4 h-4" />
-            Full Transcript ({messages.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('code')}
-            className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 transition-all ${
-              activeTab === 'code'
-                ? 'border-purple-500 text-purple-300'
-                : 'border-transparent text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Code className="w-4 h-4" />
-            Submitted Code ({submissions.length})
-          </button>
+        {/* Tab Navigation with Responsive Horizontal Scroll */}
+        <div className="border-b border-slate-800 overflow-x-auto scrollbar-none">
+          <div className="flex gap-4 min-w-max">
+            <button
+              onClick={() => setActiveTab('feedback')}
+              className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 transition-all ${
+                activeTab === 'feedback'
+                  ? 'border-purple-500 text-purple-300'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Award className="w-4 h-4" />
+              Evaluation & Breakdown
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 transition-all ${
+                activeTab === 'history'
+                  ? 'border-purple-500 text-purple-300'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <TrendingUp className="w-4 h-4" />
+              Previous Performance Comparison
+            </button>
+            <button
+              onClick={() => setActiveTab('transcript')}
+              className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 transition-all ${
+                activeTab === 'transcript'
+                  ? 'border-purple-500 text-purple-300'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <MessageSquare className="w-4 h-4" />
+              Full Transcript ({messages.length})
+            </button>
+            <button
+              onClick={() => setActiveTab('code')}
+              className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 transition-all ${
+                activeTab === 'code'
+                  ? 'border-purple-500 text-purple-300'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Code className="w-4 h-4" />
+              Submitted Code ({submissions.length})
+            </button>
+          </div>
         </div>
 
         {/* Active Tab View */}

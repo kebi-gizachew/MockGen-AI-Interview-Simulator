@@ -1,4 +1,4 @@
-import React, { ReactNode, useEffect } from 'react';
+import React, { ReactNode, useEffect, useId } from 'react';
 import { X } from 'lucide-react';
 
 export interface ModalProps {
@@ -16,6 +16,8 @@ export const Modal: React.FC<ModalProps> = ({
   children,
   maxWidth = 'md',
 }) => {
+  const titleId = useId();
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -45,6 +47,7 @@ export const Modal: React.FC<ModalProps> = ({
       <div
         className="fixed inset-0 bg-black/70 backdrop-blur-sm transition-opacity"
         onClick={onClose}
+        aria-hidden="true"
       />
 
       {/* Modal Container */}
@@ -52,9 +55,12 @@ export const Modal: React.FC<ModalProps> = ({
         className={`relative w-full ${maxWidthStyles} glass-panel border border-slate-700/80 rounded-2xl shadow-2xl p-6 z-10 animate-in fade-in zoom-in-95 duration-150`}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={titleId}
       >
         <div className="flex items-center justify-between border-b border-slate-800 pb-4 mb-5">
-          <h3 className="text-lg font-bold text-slate-100">{title}</h3>
+          <h3 id={titleId} className="text-lg font-bold text-slate-100">
+            {title}
+          </h3>
           <button
             onClick={onClose}
             className="p-1 rounded-lg text-slate-400 hover:text-slate-200 hover:bg-slate-800/80 transition-colors"

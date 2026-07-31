@@ -235,9 +235,9 @@ export const InterviewRoomPage: React.FC = () => {
         isConnected={isConnected}
       />
 
-      {/* Main Technical Workspace Toolbar */}
-      <div className="bg-slate-900/90 border-b border-slate-800 px-4 sm:px-6 flex items-center justify-between">
-        <div className="flex gap-2">
+      {/* Main Technical Workspace Toolbar with Responsive Horizontal Scroll */}
+      <div className="bg-slate-900/90 border-b border-slate-800 px-4 sm:px-6 overflow-x-auto scrollbar-none">
+        <div className="flex gap-2 min-w-max">
           <button
             onClick={() => setActiveTab('chat')}
             className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all ${

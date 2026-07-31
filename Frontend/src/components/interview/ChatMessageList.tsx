@@ -23,7 +23,11 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, isTh
   const latestScore = feedbackScores.length > 0 ? feedbackScores[feedbackScores.length - 1] : null;
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+    <div
+      className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6"
+      aria-live="polite"
+      aria-relevant="additions text"
+    >
       {/* AI Interviewer Top Panel */}
       <div className="glass-panel p-4 rounded-2xl border border-slate-800 flex items-center justify-between mb-4 bg-gradient-to-r from-slate-900 via-purple-950/20 to-slate-900">
         <div className="flex items-center gap-3">
@@ -128,7 +132,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, isTh
 
       {/* AI Typing Indicator */}
       {isThinking && (
-        <div className="flex gap-3 max-w-3xl mr-auto">
+        <div className="flex gap-3 max-w-3xl mr-auto" aria-label="AI interviewer typing response">
           <div className="w-9 h-9 rounded-xl bg-purple-600/20 text-purple-300 border border-purple-500/40 flex items-center justify-center shrink-0">
             <Sparkles className="w-4 h-4 animate-spin text-purple-400" />
           </div>

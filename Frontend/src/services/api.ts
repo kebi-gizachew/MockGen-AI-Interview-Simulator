@@ -13,21 +13,30 @@ export const apiFetch = async <T>(
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+    });
 
-  const data = await response.json();
+    const data = await response.json();
 
-  if (!response.ok) {
-    const errorData = data as ApiErrorResponse;
-    if (response.status === 401) {
-      localStorage.removeItem(LOCAL_STORAGE_KEYS.TOKEN);
-      localStorage.removeItem(LOCAL_STORAGE_KEYS.USER);
+    if (!response.ok) {
+      const errorData = data as ApiErrorResponse;
+      if (response.status === 401) {
+        localStorage.removeItem(LOCAL_STORAGE_KEYS.TOKEN);
+        localStorage.removeItem(LOCAL_STORAGE_KEYS.USER);
+      }
+      throw new Error(errorData.message || 'An unexpected API error occurred.');
     }
-    throw new Error(errorData.message || 'An unexpected API error occurred.');
-  }
 
-  return data as ApiResponse<T>;
+    return data as ApiResponse<T>;
+  } catch (err: unknown) {
+    if (err instanceof TypeError && err.message.includes('fetch')) {
+      throw new Error(
+        'Unable to connect to the backend server. Please verify your backend server is running on http://localhost:5000.'
+      );
+    }
+    throw err;
+  }
 };
