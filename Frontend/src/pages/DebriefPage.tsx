@@ -8,19 +8,21 @@ import { Spinner } from '../components/common/Spinner';
 import { ScoreGauge } from '../components/debrief/ScoreGauge';
 import { FeedbackBreakdown } from '../components/debrief/FeedbackBreakdown';
 import { TranscriptViewer } from '../components/debrief/TranscriptViewer';
+import { PreviousPerformanceComparison } from '../components/debrief/PreviousPerformanceComparison';
 import { CodeEditorTab } from '../components/interview/CodeEditorTab';
 import { formatDate } from '../utils/formatters';
-import { ArrowLeft, Award, CheckCircle, Code, MessageSquare } from 'lucide-react';
+import { ArrowLeft, Award, CheckCircle, Code, MessageSquare, TrendingUp } from 'lucide-react';
 
 export const DebriefPage: React.FC = () => {
   const { id: sessionId } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
   const [session, setSession] = useState<InterviewSession | null>(null);
+  const [allSessions, setAllSessions] = useState<InterviewSession[]>([]);
   const [submissions, setSubmissions] = useState<CodeSubmission[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'feedback' | 'transcript' | 'code'>('feedback');
+  const [activeTab, setActiveTab] = useState<'feedback' | 'transcript' | 'code' | 'history'>('feedback');
 
   const loadDebriefData = useCallback(async () => {
     if (!sessionId) return;
@@ -28,13 +30,15 @@ export const DebriefPage: React.FC = () => {
     setError('');
 
     try {
-      const [sessionRes, codeRes] = await Promise.all([
+      const [sessionRes, codeRes, allSessionsRes] = await Promise.all([
         interviewService.getSessionById(sessionId),
         interviewService.getCodeSubmissions(sessionId),
+        interviewService.getUserSessions({ limit: 50 }),
       ]);
 
       setSession(sessionRes.data.session);
       setSubmissions(codeRes.data.submissions || []);
+      setAllSessions(allSessionsRes.data.sessions || []);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load interview debrief.';
       setError(msg);
@@ -88,6 +92,8 @@ export const DebriefPage: React.FC = () => {
       )
     : 85;
 
+  const finalScore = summaryMessage?.metadata?.score || averageScore;
+
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col text-slate-100">
       <Navbar />
@@ -107,7 +113,7 @@ export const DebriefPage: React.FC = () => {
                 <h1 className="text-2xl font-extrabold text-slate-100">{session.title}</h1>
                 <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                   <CheckCircle className="w-3 h-3 inline mr-1" />
-                  Debrief Ready
+                  Debrief Generated
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-1">
@@ -123,11 +129,11 @@ export const DebriefPage: React.FC = () => {
 
         {/* Top Score & Summary Banner */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <ScoreGauge score={summaryMessage?.metadata?.score || averageScore} />
+          <ScoreGauge score={finalScore} label="Overall Candidate Score" />
           <div className="md:col-span-2 glass-panel rounded-2xl p-6 flex flex-col justify-between">
             <div>
               <h3 className="text-sm font-bold uppercase tracking-wider text-purple-400 mb-2">
-                Performance Debrief Snapshot
+                AI Interviewer Executive Summary
               </h3>
               <p className="text-sm text-slate-200 leading-relaxed">
                 {summaryMessage?.content ||
@@ -144,8 +150,10 @@ export const DebriefPage: React.FC = () => {
                 <span className="text-lg font-bold text-slate-100">{submissions.length}</span>
               </div>
               <div>
-                <span className="block text-xs text-slate-400 font-medium">Status</span>
-                <span className="text-lg font-bold text-emerald-400">Passed Screen</span>
+                <span className="block text-xs text-slate-400 font-medium">Performance Grade</span>
+                <span className="text-lg font-bold text-emerald-400">
+                  {finalScore >= 80 ? 'Strong Hire' : finalScore >= 60 ? 'Hire' : 'Needs Practice'}
+                </span>
               </div>
             </div>
           </div>
@@ -163,6 +171,17 @@ export const DebriefPage: React.FC = () => {
           >
             <Award className="w-4 h-4" />
             Evaluation & Breakdown
+          </button>
+          <button
+            onClick={() => setActiveTab('history')}
+            className={`pb-3 text-sm font-bold border-b-2 flex items-center gap-2 transition-all ${
+              activeTab === 'history'
+                ? 'border-purple-500 text-purple-300'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <TrendingUp className="w-4 h-4" />
+            Previous Performance Comparison
           </button>
           <button
             onClick={() => setActiveTab('transcript')}
@@ -193,7 +212,14 @@ export const DebriefPage: React.FC = () => {
           {activeTab === 'feedback' && (
             <FeedbackBreakdown
               summaryContent={summaryMessage?.content}
-              score={summaryMessage?.metadata?.score || averageScore}
+              score={finalScore}
+            />
+          )}
+
+          {activeTab === 'history' && (
+            <PreviousPerformanceComparison
+              currentSessionId={session.id}
+              allSessions={allSessions}
             />
           )}
 
