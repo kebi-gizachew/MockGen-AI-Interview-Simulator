@@ -20,6 +20,10 @@ const authenticate = async (req, res, next) => {
       throw new HttpError(401, "Invalid or expired token.");
     }
 
+    if (!decoded || !decoded.userId) {
+      throw new HttpError(401, "Invalid or expired token.");
+    }
+
     const user = await authService.getUserById(decoded.userId);
     req.user = user;
     next();

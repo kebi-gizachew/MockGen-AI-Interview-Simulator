@@ -60,15 +60,7 @@ const runWithServer = async (fn) => {
   const server = http.createServer(app);
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   const port = server.address().port;
-  const api = (method, path, opts) => request(method, path, opts).then((r) => {
-    // rewrite - actually we need to fix port
-    return null;
-  });
 
-  const boundRequest = (method, path, opts = {}) =>
-    request(method, `http://127.0.0.1:${port}${path}`.replace(/http:\/\/127\.0\.0\.1:\d+/, "") || path, opts).catch(() => null);
-
-  // Simpler: patch request to use port
   const req = async (method, path, opts = {}) => {
     const payload = opts.body ? JSON.stringify(opts.body) : null;
     return new Promise((resolve, reject) => {

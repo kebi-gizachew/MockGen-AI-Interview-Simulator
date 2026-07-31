@@ -36,10 +36,26 @@ const createSummarySystemPrompt = () =>
     "- score must be an integer between 0 and 100 representing overall performance.",
   ].join("\n");
 
+let openaiClientInstance = null;
+
+const getOpenAiClient = () => {
+  if (!env.openAiApiKey) {
+    throw new Error("OPENAI_API_KEY is missing.");
+  }
+  if (!openaiClientInstance) {
+    openaiClientInstance = new OpenAI({ apiKey: env.openAiApiKey });
+  }
+  return openaiClientInstance;
+};
+
 const parseModelResponse = (rawText, allowedTypes) => {
   let parsed;
   try {
-    parsed = JSON.parse(rawText);
+    const cleanedText = rawText
+      .replace(/^```(?:json)?\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+    parsed = JSON.parse(cleanedText);
   } catch (error) {
     throw new Error("OpenAI response was not valid JSON.");
   }
@@ -65,14 +81,11 @@ const parseModelResponse = (rawText, allowedTypes) => {
 };
 
 const callOpenAi = async ({ systemPrompt, payload }) => {
-  if (!env.openAiApiKey) {
-    throw new Error("OPENAI_API_KEY is missing.");
-  }
-
-  const openai = new OpenAI({ apiKey: env.openAiApiKey });
+  const openai = getOpenAiClient();
   const completion = await openai.chat.completions.create({
     model: env.openAiModel,
     temperature: 0.3,
+    response_format: { type: "json_object" },
     messages: [
       { role: "system", content: systemPrompt },
       { role: "user", content: JSON.stringify(payload) },

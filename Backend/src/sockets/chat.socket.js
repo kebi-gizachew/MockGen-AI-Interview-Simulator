@@ -5,6 +5,7 @@ const { SESSION_STATUS } = require("../constants/interview.constants");
 
 const SOCKET_EVENTS = {
   JOIN_SESSION: "join_session",
+  JOINED_SESSION: "joined_session",
   SEND_MESSAGE: "send_message",
   RECEIVE_MESSAGE: "receive_message",
   AI_RESPONSE: "ai_response",
@@ -31,7 +32,7 @@ const registerChatSocketHandlers = (io, socket) => {
       });
 
       socket.join(buildRoomName(sessionId));
-      socket.emit("joined_session", { sessionId });
+      socket.emit(SOCKET_EVENTS.JOINED_SESSION, { sessionId });
     } catch (error) {
       socket.emit(SOCKET_EVENTS.ERROR, {
         message: error.message || "Unable to join session",
@@ -50,20 +51,11 @@ const registerChatSocketHandlers = (io, socket) => {
         return;
       }
 
-      const session = await messageService.findSessionById(sessionId);
-      if (!session || session.userId !== socket.user.id) {
-        socket.emit(SOCKET_EVENTS.ERROR, {
-          message: "Interview session not found",
-        });
-        return;
-      }
-
-      if (session.status !== SESSION_STATUS.ACTIVE) {
-        socket.emit(SOCKET_EVENTS.ERROR, {
-          message: "This interview session is no longer active.",
-        });
-        return;
-      }
+      const session = await interviewService.getSessionById({
+        sessionId,
+        userId: socket.user.id,
+      });
+      interviewService.assertSessionActive(session);
 
       const result = await aiInterviewService.processCandidateMessage({
         sessionId,

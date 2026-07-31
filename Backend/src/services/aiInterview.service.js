@@ -8,7 +8,6 @@ const messageService = require("./message.service");
 const HttpError = require("../utils/httpError");
 const {
   MESSAGE_ROLES,
-  AI_RESPONSE_TYPES,
   SESSION_STATUS,
 } = require("../constants/interview.constants");
 

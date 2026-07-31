@@ -17,11 +17,15 @@ const socketAuthMiddleware = async (socket, next) => {
       return next(new Error("Invalid or expired token."));
     }
 
+    if (!decoded || !decoded.userId) {
+      return next(new Error("Invalid or expired token."));
+    }
+
     const user = await authService.getUserById(decoded.userId);
     socket.user = user;
     next();
   } catch (error) {
-    next(new Error("Authentication failed."));
+    next(new Error(error.message || "Authentication failed."));
   }
 };
 

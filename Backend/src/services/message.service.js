@@ -27,10 +27,12 @@ const createMessage = async ({ interviewSessionId, role, content, metadata }) =>
 
 const messageSelect = {
   id: true,
+  interviewSessionId: true,
   role: true,
   content: true,
   metadata: true,
   createdAt: true,
+  updatedAt: true,
 };
 
 module.exports = {

@@ -38,32 +38,43 @@ const validateContext = (interviewContext) => {
   }
 };
 
-const withProvider = (openAiFn, mockFn) => {
+const executeWithFallback = async (openAiFn, mockFn, args) => {
   if (env.openAiApiKey) {
-    return openAiFn;
+    try {
+      return await openAiFn(args);
+    } catch (error) {
+      console.warn("OpenAI provider failed, falling back to mock provider:", error.message);
+      return mockFn(args);
+    }
   }
-  return mockFn;
+  return mockFn(args);
 };
 
 const generateInterviewResponse = async ({ userMessage, interviewContext }) => {
   validateInput({ userMessage, interviewContext });
-  const provider = withProvider(
+  return executeWithFallback(
     generateOpenAiInterviewResponse,
-    generateMockInterviewResponse
+    generateMockInterviewResponse,
+    { userMessage, interviewContext }
   );
-  return provider({ userMessage, interviewContext });
 };
 
 const generateOpeningQuestion = async ({ interviewContext }) => {
   validateContext(interviewContext);
-  const provider = withProvider(generateOpenAiOpeningQuestion, generateMockOpeningQuestion);
-  return provider({ interviewContext });
+  return executeWithFallback(
+    generateOpenAiOpeningQuestion,
+    generateMockOpeningQuestion,
+    { interviewContext }
+  );
 };
 
 const generateFinalSummary = async ({ interviewContext }) => {
   validateContext(interviewContext);
-  const provider = withProvider(generateOpenAiFinalSummary, generateMockFinalSummary);
-  return provider({ interviewContext });
+  return executeWithFallback(
+    generateOpenAiFinalSummary,
+    generateMockFinalSummary,
+    { interviewContext }
+  );
 };
 
 module.exports = {
