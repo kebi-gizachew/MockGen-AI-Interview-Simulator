@@ -9,8 +9,9 @@ import { SessionHeader } from '../components/interview/SessionHeader';
 import { ChatMessageList } from '../components/interview/ChatMessageList';
 import { ChatInput } from '../components/interview/ChatInput';
 import { CodeEditorTab } from '../components/interview/CodeEditorTab';
+import { QuestionHistory } from '../components/interview/QuestionHistory';
 import { SOCKET_EVENTS } from '../utils/constants';
-import { MessageSquare, Code, AlertCircle } from 'lucide-react';
+import { MessageSquare, Code, HelpCircle, AlertCircle } from 'lucide-react';
 
 export const InterviewRoomPage: React.FC = () => {
   const { id: sessionId } = useParams<{ id: string }>();
@@ -24,7 +25,7 @@ export const InterviewRoomPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
 
-  const [activeTab, setActiveTab] = useState<'chat' | 'code'>('chat');
+  const [activeTab, setActiveTab] = useState<'chat' | 'code' | 'questions'>('chat');
   const [isSending, setIsSending] = useState<boolean>(false);
   const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
   const [isEnding, setIsEnding] = useState<boolean>(false);
@@ -133,13 +134,16 @@ export const InterviewRoomPage: React.FC = () => {
       const res = await interviewService.submitCode(sessionId, params);
       setSubmissions((prev) => [res.data.submission, ...prev]);
 
-      // Notify in chat feed
+      // Notify in chat feed & trigger AI feedback
       const rawRes = await interviewService.saveRawMessage(
         sessionId,
         'system',
-        `Candidate submitted a new ${params.language} code snippet.`
+        `Candidate submitted a ${params.language} code solution.`
       );
       setMessages((prev) => [...prev, rawRes.data.message]);
+
+      // Also trigger chat exchange for AI code analysis
+      handleSendMessage(`I submitted code in ${params.language}: ${params.notes || 'Please review my logic.'}`);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : 'Failed to submit code.');
     }
@@ -190,7 +194,7 @@ export const InterviewRoomPage: React.FC = () => {
         <Navbar />
         <div className="flex-1 flex flex-col items-center justify-center">
           <Spinner size="lg" />
-          <p className="text-sm font-medium text-slate-400 mt-3">Connecting to interview workspace...</p>
+          <p className="text-sm font-medium text-slate-400 mt-3">Connecting to technical interview room...</p>
         </div>
       </div>
     );
@@ -228,9 +232,10 @@ export const InterviewRoomPage: React.FC = () => {
         onEndInterview={handleEndInterview}
         onUpdateTitle={handleUpdateTitle}
         isEnding={isEnding}
+        isConnected={isConnected}
       />
 
-      {/* Main Workspace Navigation Bar */}
+      {/* Main Technical Workspace Toolbar */}
       <div className="bg-slate-900/90 border-b border-slate-800 px-4 sm:px-6 flex items-center justify-between">
         <div className="flex gap-2">
           <button
@@ -262,12 +267,24 @@ export const InterviewRoomPage: React.FC = () => {
               {submissions.length}
             </span>
           </button>
+
+          <button
+            onClick={() => setActiveTab('questions')}
+            className={`flex items-center gap-2 py-3 px-4 text-xs font-bold border-b-2 transition-all ${
+              activeTab === 'questions'
+                ? 'border-purple-500 text-purple-300 bg-purple-500/10'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <HelpCircle className="w-4 h-4" />
+            <span>Question History</span>
+          </button>
         </div>
       </div>
 
-      {/* Main Workspace Content Area */}
+      {/* Workspace Main Display */}
       <div className="flex-1 flex flex-col min-h-0 bg-slate-950">
-        {activeTab === 'chat' ? (
+        {activeTab === 'chat' && (
           <div className="flex-1 flex flex-col min-h-0 max-w-5xl w-full mx-auto">
             <ChatMessageList messages={messages} isThinking={isAiThinking} />
             <ChatInput
@@ -276,7 +293,9 @@ export const InterviewRoomPage: React.FC = () => {
               isSending={isSending}
             />
           </div>
-        ) : (
+        )}
+
+        {activeTab === 'code' && (
           <div className="flex-1 p-4 sm:p-6 min-h-0 max-w-7xl w-full mx-auto">
             <CodeEditorTab
               submissions={submissions}
@@ -284,6 +303,12 @@ export const InterviewRoomPage: React.FC = () => {
               onDeleteSubmission={handleDeleteSubmission}
               readOnly={isCompleted}
             />
+          </div>
+        )}
+
+        {activeTab === 'questions' && (
+          <div className="flex-1 p-4 sm:p-6 min-h-0 max-w-4xl w-full mx-auto">
+            <QuestionHistory messages={messages} />
           </div>
         )}
       </div>

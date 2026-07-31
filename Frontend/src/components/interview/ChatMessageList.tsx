@@ -1,8 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Message } from '../../types';
-import { Badge } from '../common/Badge';
-import { formatTimeAgo, getScoreBadgeColor } from '../../utils/formatters';
-import { Bot, User as UserIcon, Sparkles } from 'lucide-react';
+import { getScoreBadgeColor, formatTimeAgo } from '../../utils/formatters';
+import { Bot, User as UserIcon, Sparkles, Award } from 'lucide-react';
 
 export interface ChatMessageListProps {
   messages: Message[];
@@ -16,8 +15,45 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, isTh
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isThinking]);
 
+  // Compute average score from AI feedback messages
+  const feedbackScores = messages
+    .filter((m) => m.metadata?.score !== undefined && m.metadata?.score !== null)
+    .map((m) => m.metadata!.score!);
+
+  const latestScore = feedbackScores.length > 0 ? feedbackScores[feedbackScores.length - 1] : null;
+
   return (
     <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+      {/* AI Interviewer Top Panel */}
+      <div className="glass-panel p-4 rounded-2xl border border-slate-800 flex items-center justify-between mb-4 bg-gradient-to-r from-slate-900 via-purple-950/20 to-slate-900">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-purple-600/20 text-purple-300 border border-purple-500/30 flex items-center justify-center font-bold">
+            <Bot className="w-6 h-6 text-purple-400" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+              AI Technical Interviewer
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+            </h3>
+            <p className="text-[11px] text-slate-400">
+              Evaluating System Architecture, Problem Solving, & Code Quality
+            </p>
+          </div>
+        </div>
+
+        {latestScore !== null && (
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800">
+            <Award className="w-4 h-4 text-purple-400" />
+            <div className="text-right">
+              <span className="block text-[10px] text-slate-400 font-semibold uppercase">Latest Score</span>
+              <span className={`text-xs font-bold ${getScoreBadgeColor(latestScore).split(' ')[1]}`}>
+                {latestScore} / 100
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
       {messages.length === 0 ? (
         <div className="h-full flex flex-col items-center justify-center text-slate-500 py-12">
           <Bot className="w-12 h-12 mb-3 text-purple-400/50 animate-pulse" />
@@ -97,7 +133,7 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, isTh
             <Sparkles className="w-4 h-4 animate-spin text-purple-400" />
           </div>
           <div className="glass-panel p-4 rounded-2xl rounded-tl-none text-sm text-slate-400 flex items-center gap-2">
-            <span className="animate-pulse">AI Interviewer is analyzing response...</span>
+            <span className="animate-pulse">AI Interviewer is evaluating answer...</span>
             <div className="flex gap-1">
               <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
               <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
