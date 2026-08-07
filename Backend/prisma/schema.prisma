@@ -18,15 +18,30 @@ enum MessageRole {
   system
 }
 
+enum Difficulty {
+  easy
+  medium
+  hard
+}
+
 // Core user account for the platform.
+// - password is nullable: Google-authenticated accounts have no password.
+// - isVerified gates full activation for email/password signups; Google
+//   accounts are considered verified (Google verifies the address itself).
 model User {
-  id                String             @id @default(cuid())
-  email             String             @unique
-  password          String
-  name              String?
-  interviewSessions InterviewSession[]
-  createdAt         DateTime           @default(now())
-  updatedAt         DateTime           @updatedAt
+  id                      String             @id @default(cuid())
+  email                   String             @unique
+  password                String?
+  name                    String?
+  avatar                  String?
+  provider                String             @default("email") // "email" | "google"
+  googleId                String?            @unique
+  isVerified              Boolean            @default(false)
+  verificationToken       String?
+  verificationTokenExpires DateTime?
+  interviewSessions       InterviewSession[]
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
 }
 
 // One end-to-end interview run started by a user.
@@ -34,17 +49,57 @@ model InterviewSession {
   id              String           @id @default(cuid())
   userId          String
   title           String?
+  // Interview setup configuration (MVP spec)
+  company         String?
+  role            String?
+  difficulty      Difficulty?
+  language        String?
+  durationMinutes Int?
+  // Final AI evaluation score (0-100), persisted when the interview ends
+  score           Int?
+  // Structured coding problem assigned to this session
+  questionId      String?
   status          SessionStatus    @default(active)
   startedAt       DateTime         @default(now())
   endedAt         DateTime?
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question        Question?        @relation(fields: [questionId], references: [id])
   messages        Message[]
   codeSubmissions CodeSubmission[]
+  feedback        Feedback?
   createdAt       DateTime         @default(now())
-  updatedAt       DateTime           @updatedAt
+  updatedAt       DateTime         @updatedAt
 
   @@index([userId])
   @@index([userId, status])
+}
+
+// LeetCode-style coding question used during an interview session.
+model Question {
+  id           String             @id @default(cuid())
+  title        String
+  description  String
+  difficulty   Difficulty
+  topic        String
+  company      String?
+  // Company interview frequency metadata (drives realistic per-company ranking)
+  // frequencyRank: 1 = most frequently reported at this company
+  // interviewFrequency: "very_high" | "high" | "medium" | "low"
+  frequencyRank        Int?
+  interviewFrequency   String?
+  // Name of the function candidates must implement (used by the test harness)
+  functionName String
+  // Optional per-argument type hints for the execution harness, e.g. ["tree", "int"]
+  // for inputs that need structural conversion (trees built from level-order JSON).
+  argTypes     Json?
+  examples     Json?
+  constraints  Json?
+  testCases    Json
+  // Starter code templates keyed by language id (javascript, typescript, python, java, cpp)
+  starterCode  Json
+  sessions     InterviewSession[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
 }
 
 // Chat-like exchange inside an interview session.
@@ -68,9 +123,33 @@ model CodeSubmission {
   language           String
   code               String
   notes              String?
+  // Execution result against the session question test cases
+  result             Json?
+  passedTests        Int?
+  totalTests         Int?
   interviewSession   InterviewSession @relation(fields: [interviewSessionId], references: [id], onDelete: Cascade)
   createdAt          DateTime         @default(now())
   updatedAt          DateTime         @updatedAt
 
   @@index([interviewSessionId])
+}
+
+// Structured AI evaluation generated when an interview session ends.
+model Feedback {
+  id                 String           @id @default(cuid())
+  interviewSessionId String           @unique
+  score              Int
+  problemSolving     Int?
+  codeQuality        Int?
+  communication      Int?
+  optimization       Int?
+  // Hiring-committee style verdict derived from the score
+  recommendation     String?
+  strengths          Json
+  weaknesses         Json
+  recommendations    Json
+  summary            String
+  interviewSession   InterviewSession @relation(fields: [interviewSessionId], references: [id], onDelete: Cascade)
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 }

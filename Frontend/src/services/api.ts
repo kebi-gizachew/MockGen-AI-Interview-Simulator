@@ -27,7 +27,13 @@ export const apiFetch = async <T>(
         localStorage.removeItem(LOCAL_STORAGE_KEYS.TOKEN);
         localStorage.removeItem(LOCAL_STORAGE_KEYS.USER);
       }
-      throw new Error(errorData.message || 'An unexpected API error occurred.');
+      // Carry the HTTP status so callers can react to specific codes (e.g.
+      // 410 = interview time expired → route to the debrief).
+      const error = new Error(errorData.message || 'An unexpected API error occurred.') as Error & {
+        status?: number;
+      };
+      error.status = response.status;
+      throw error;
     }
 
     return data as ApiResponse<T>;

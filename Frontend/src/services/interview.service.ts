@@ -4,10 +4,13 @@ import {
   InterviewSession,
   PaginatedSessionsResponse,
   StartInterviewResponseData,
+  StartInterviewConfig,
   ChatResponseData,
   EndInterviewResponseData,
   CodeSubmission,
-  Message,
+  CodeRunResult,
+  Feedback,
+  Question,
   SessionStatus,
 } from '../types';
 
@@ -24,10 +27,31 @@ export interface SubmitCodeParams {
 }
 
 export const interviewService = {
-  createSession: async (title?: string): Promise<ApiResponse<StartInterviewResponseData>> => {
+  createSession: async (config: StartInterviewConfig = {}): Promise<ApiResponse<StartInterviewResponseData>> => {
     return apiFetch<StartInterviewResponseData>('/interviews', {
       method: 'POST',
-      body: JSON.stringify({ title: title || 'Mock Interview' }),
+      body: JSON.stringify({
+        title: config.title || 'Mock Interview',
+        company: config.company,
+        role: config.role,
+        difficulty: config.difficulty,
+        language: config.language,
+        durationMinutes: config.durationMinutes,
+      }),
+    });
+  },
+
+  getRandomQuestion: async (
+    options: { difficulty?: string; topic?: string; company?: string } = {}
+  ): Promise<ApiResponse<{ question: Question }>> => {
+    const query = new URLSearchParams();
+    if (options.difficulty) query.append('difficulty', options.difficulty);
+    if (options.topic) query.append('topic', options.topic);
+    if (options.company) query.append('company', options.company);
+
+    const queryString = query.toString();
+    return apiFetch<{ question: Question }>(`/questions/random${queryString ? `?${queryString}` : ''}`, {
+      method: 'GET',
     });
   },
 
@@ -79,9 +103,13 @@ export const interviewService = {
     });
   },
 
-  endInterview: async (sessionId: string): Promise<ApiResponse<EndInterviewResponseData>> => {
+  endInterview: async (
+    sessionId: string,
+    options: { autoExpired?: boolean } = {}
+  ): Promise<ApiResponse<EndInterviewResponseData>> => {
     return apiFetch<EndInterviewResponseData>(`/interviews/${sessionId}/end`, {
       method: 'POST',
+      body: JSON.stringify({ autoExpired: Boolean(options.autoExpired) }),
     });
   },
 
@@ -112,15 +140,20 @@ export const interviewService = {
     });
   },
 
-  saveRawMessage: async (
+  runCode: async (
     sessionId: string,
-    role: 'user' | 'assistant' | 'system',
-    content: string,
-    metadata?: Record<string, unknown>
-  ): Promise<ApiResponse<{ message: Message }>> => {
-    return apiFetch<{ message: Message }>(`/interviews/${sessionId}/messages`, {
+    language: string,
+    code: string
+  ): Promise<ApiResponse<{ result: CodeRunResult }>> => {
+    return apiFetch<{ result: CodeRunResult }>(`/interviews/${sessionId}/code/run`, {
       method: 'POST',
-      body: JSON.stringify({ role, content, metadata }),
+      body: JSON.stringify({ language, code }),
+    });
+  },
+
+  getFeedback: async (sessionId: string): Promise<ApiResponse<{ feedback: Feedback | null }>> => {
+    return apiFetch<{ feedback: Feedback | null }>(`/interviews/${sessionId}/feedback`, {
+      method: 'GET',
     });
   },
 };

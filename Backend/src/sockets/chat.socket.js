@@ -36,6 +36,7 @@ const registerChatSocketHandlers = (io, socket) => {
     } catch (error) {
       socket.emit(SOCKET_EVENTS.ERROR, {
         message: error.message || "Unable to join session",
+        code: error.statusCode || 500,
       });
     }
   });
@@ -77,8 +78,11 @@ const registerChatSocketHandlers = (io, socket) => {
         aiResponse: result.aiResponse,
       });
     } catch (error) {
+      // code lets the client distinguish a finished/expired interview (410)
+      // from transient failures so it can route to the debrief.
       socket.emit(SOCKET_EVENTS.ERROR, {
         message: error.message || "Unable to send message",
+        code: error.statusCode || 500,
       });
     }
   });

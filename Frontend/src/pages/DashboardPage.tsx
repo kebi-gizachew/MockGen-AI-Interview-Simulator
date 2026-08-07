@@ -2,7 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { interviewService } from '../services/interview.service';
-import { InterviewSession, SessionStatus } from '../types';
+import { authService } from '../services/auth.service';
+import { InterviewSession, SessionStatus, StartInterviewConfig } from '../types';
 import { Navbar } from '../components/common/Navbar';
 import { Button } from '../components/common/Button';
 import { Spinner } from '../components/common/Spinner';
@@ -10,7 +11,7 @@ import { SessionCard } from '../components/dashboard/SessionCard';
 import { StartInterviewModal } from '../components/dashboard/StartInterviewModal';
 import { StatsOverview } from '../components/dashboard/StatsOverview';
 import { RecentActivityFeed } from '../components/dashboard/RecentActivityFeed';
-import { Plus, RefreshCw, Layers, Sparkles, User as UserIcon } from 'lucide-react';
+import { Plus, RefreshCw, Layers, Sparkles, User as UserIcon, ShieldAlert } from 'lucide-react';
 
 export const DashboardPage: React.FC = () => {
   const { user } = useAuth();
@@ -21,6 +22,22 @@ export const DashboardPage: React.FC = () => {
   const [error, setError] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<SessionStatus | 'all'>('all');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isResending, setIsResending] = useState<boolean>(false);
+  const [resendMsg, setResendMsg] = useState<string>('');
+
+  const handleResendVerification = async () => {
+    if (!user?.email || isResending) return;
+    setIsResending(true);
+    setResendMsg('');
+    try {
+      await authService.resendVerification(user.email);
+      setResendMsg('Verification email sent — check your inbox.');
+    } catch (err: unknown) {
+      setResendMsg(err instanceof Error ? err.message : 'Failed to resend verification email.');
+    } finally {
+      setIsResending(false);
+    }
+  };
 
   const fetchSessions = useCallback(async () => {
     setLoading(true);
@@ -42,8 +59,8 @@ export const DashboardPage: React.FC = () => {
     fetchSessions();
   }, [fetchSessions]);
 
-  const handleStartSession = async (title: string) => {
-    const res = await interviewService.createSession(title);
+  const handleStartSession = async (config: StartInterviewConfig) => {
+    const res = await interviewService.createSession(config);
     const newSessionId = res.data.session.id;
     navigate(`/interview/${newSessionId}`);
   };
@@ -62,6 +79,33 @@ export const DashboardPage: React.FC = () => {
       <Navbar />
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Unverified Email Banner */}
+        {user && user.provider !== 'google' && !user.isVerified && (
+          <div className="glass-panel border border-amber-500/30 rounded-2xl p-4 mb-6 flex flex-col sm:flex-row sm:items-center gap-3 bg-gradient-to-r from-amber-950/30 to-slate-900/60">
+            <div className="flex items-center gap-3 flex-1">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0">
+                <ShieldAlert className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-amber-200">Your email is not verified yet</p>
+                <p className="text-xs text-amber-400/80 mt-0.5">
+                  Confirm your address to fully activate your account and never miss session reports.
+                </p>
+                {resendMsg && <p className="text-xs text-emerald-400 mt-1">{resendMsg}</p>}
+              </div>
+            </div>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleResendVerification}
+              isLoading={isResending}
+              className="shrink-0"
+            >
+              Resend Verification Email
+            </Button>
+          </div>
+        )}
+
         {/* Welcome Section */}
         <div className="glass-panel p-6 sm:p-8 rounded-3xl border border-slate-800 mb-8 bg-gradient-to-r from-slate-900/90 via-purple-950/20 to-slate-900/90 flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-2xl">
           <div className="flex items-start gap-4">

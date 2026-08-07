@@ -10,13 +10,17 @@ export interface AuthContextType {
   loading: boolean;
   login: (params: LoginParams) => Promise<User>;
   register: (params: RegisterParams) => Promise<User>;
+  /** Complete a session handed back by an external flow (Google OAuth). */
+  completeExternalLogin: (token: string, user: User) => void;
+  /** Replace the cached user (e.g. after email verification). */
+  setUser: (user: User | null) => void;
   logout: () => void;
 }
 
 export const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(() => {
+  const [user, setUserState] = useState<User | null>(() => {
     const savedUser = localStorage.getItem(LOCAL_STORAGE_KEYS.USER);
     if (!savedUser) return null;
     try {
@@ -37,7 +41,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       if (token) {
         try {
           const res = await authService.getMe();
-          setUser(res.data.user);
+          setUserState(res.data.user);
           localStorage.setItem(LOCAL_STORAGE_KEYS.USER, JSON.stringify(res.data.user));
         } catch (error) {
           console.error('Session verification failed:', error);
@@ -55,7 +59,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const { user: loggedInUser, token: authToken } = res.data;
 
     setToken(authToken);
-    setUser(loggedInUser);
+    setUserState(loggedInUser);
     localStorage.setItem(LOCAL_STORAGE_KEYS.TOKEN, authToken);
     localStorage.setItem(LOCAL_STORAGE_KEYS.USER, JSON.stringify(loggedInUser));
     return loggedInUser;
@@ -66,10 +70,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const { user: registeredUser, token: authToken } = res.data;
 
     setToken(authToken);
-    setUser(registeredUser);
+    setUserState(registeredUser);
     localStorage.setItem(LOCAL_STORAGE_KEYS.TOKEN, authToken);
     localStorage.setItem(LOCAL_STORAGE_KEYS.USER, JSON.stringify(registeredUser));
     return registeredUser;
+  };
+
+  const completeExternalLogin = (externalToken: string, externalUser: User) => {
+    setToken(externalToken);
+    setUserState(externalUser);
+    localStorage.setItem(LOCAL_STORAGE_KEYS.TOKEN, externalToken);
+    localStorage.setItem(LOCAL_STORAGE_KEYS.USER, JSON.stringify(externalUser));
+  };
+
+  const setUser = (updatedUser: User | null) => {
+    setUserState(updatedUser);
+    if (updatedUser) {
+      localStorage.setItem(LOCAL_STORAGE_KEYS.USER, JSON.stringify(updatedUser));
+    } else {
+      localStorage.removeItem(LOCAL_STORAGE_KEYS.USER);
+    }
   };
 
   const logout = () => {
@@ -88,6 +108,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         loading,
         login,
         register,
+        completeExternalLogin,
+        setUser,
         logout,
       }}
     >

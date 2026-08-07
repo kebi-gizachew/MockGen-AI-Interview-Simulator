@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { interviewService } from '../services/interview.service';
-import { InterviewSession, CodeSubmission } from '../types';
+import { InterviewSession, CodeSubmission, Feedback } from '../types';
 import { Navbar } from '../components/common/Navbar';
 import { Button } from '../components/common/Button';
 import { Spinner } from '../components/common/Spinner';
@@ -10,7 +10,7 @@ import { FeedbackBreakdown } from '../components/debrief/FeedbackBreakdown';
 import { TranscriptViewer } from '../components/debrief/TranscriptViewer';
 import { PreviousPerformanceComparison } from '../components/debrief/PreviousPerformanceComparison';
 import { CodeEditorTab } from '../components/interview/CodeEditorTab';
-import { formatDate } from '../utils/formatters';
+import { formatDate, deriveRecommendation, getRecommendationBadgeColor } from '../utils/formatters';
 import { ArrowLeft, Award, CheckCircle, Code, MessageSquare, TrendingUp } from 'lucide-react';
 
 export const DebriefPage: React.FC = () => {
@@ -20,6 +20,7 @@ export const DebriefPage: React.FC = () => {
   const [session, setSession] = useState<InterviewSession | null>(null);
   const [allSessions, setAllSessions] = useState<InterviewSession[]>([]);
   const [submissions, setSubmissions] = useState<CodeSubmission[]>([]);
+  const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'feedback' | 'transcript' | 'code' | 'history'>('feedback');
@@ -30,15 +31,17 @@ export const DebriefPage: React.FC = () => {
     setError('');
 
     try {
-      const [sessionRes, codeRes, allSessionsRes] = await Promise.all([
+      const [sessionRes, codeRes, allSessionsRes, feedbackRes] = await Promise.all([
         interviewService.getSessionById(sessionId),
         interviewService.getCodeSubmissions(sessionId),
         interviewService.getUserSessions({ limit: 50 }),
+        interviewService.getFeedback(sessionId),
       ]);
 
       setSession(sessionRes.data.session);
       setSubmissions(codeRes.data.submissions || []);
       setAllSessions(allSessionsRes.data.sessions || []);
+      setFeedback(feedbackRes.data.feedback);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to load interview debrief.';
       setError(msg);
@@ -82,17 +85,12 @@ export const DebriefPage: React.FC = () => {
 
   const messages = session.messages || [];
 
-  // Look for summary message or last feedback score
+  // Real persisted evaluation takes precedence; fall back to the transcript.
   const summaryMessage = messages.find((m) => m.metadata?.type === 'summary');
-  const scoredMessages = messages.filter((m) => m.metadata?.score !== undefined);
-  const averageScore = scoredMessages.length
-    ? Math.round(
-        scoredMessages.reduce((acc, m) => acc + (m.metadata?.score || 0), 0) /
-          scoredMessages.length
-      )
-    : 85;
-
-  const finalScore = summaryMessage?.metadata?.score || averageScore;
+  const finalScore = feedback?.score ?? session.score ?? summaryMessage?.metadata?.score ?? 0;
+  // Hiring-committee verdict: persisted recommendation, else derived from score.
+  const recommendation = feedback?.recommendation || deriveRecommendation(finalScore);
+  const recommendationColor = getRecommendationBadgeColor(recommendation, finalScore);
 
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col text-slate-100">
@@ -129,7 +127,7 @@ export const DebriefPage: React.FC = () => {
 
         {/* Top Score & Summary Banner */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <ScoreGauge score={finalScore} label="Overall Candidate Score" />
+          <ScoreGauge score={finalScore} label="Overall Interview Score" />
           <div className="md:col-span-2 glass-panel rounded-2xl p-6 flex flex-col justify-between">
             <div>
               <h3 className="text-sm font-bold uppercase tracking-wider text-purple-400 mb-2">
@@ -150,9 +148,11 @@ export const DebriefPage: React.FC = () => {
                 <span className="text-lg font-bold text-slate-100">{submissions.length}</span>
               </div>
               <div>
-                <span className="block text-xs text-slate-400 font-medium">Performance Grade</span>
-                <span className="text-lg font-bold text-emerald-400">
-                  {finalScore >= 80 ? 'Strong Hire' : finalScore >= 60 ? 'Hire' : 'Needs Practice'}
+                <span className="block text-xs text-slate-400 font-medium">Hiring Recommendation</span>
+                <span
+                  className={`inline-block mt-1 px-3 py-1 rounded-full text-sm font-extrabold border ${recommendationColor}`}
+                >
+                  {recommendation}
                 </span>
               </div>
             </div>
@@ -213,8 +213,11 @@ export const DebriefPage: React.FC = () => {
         <div>
           {activeTab === 'feedback' && (
             <FeedbackBreakdown
+              feedback={feedback}
               summaryContent={summaryMessage?.content}
               score={finalScore}
+              recommendation={recommendation}
+              recommendationColor={recommendationColor}
             />
           )}
 
@@ -230,7 +233,18 @@ export const DebriefPage: React.FC = () => {
           {activeTab === 'code' && (
             <CodeEditorTab
               submissions={submissions}
+              language="javascript"
+              codeBuffers={{}}
+              onLanguageChange={() => {}}
+              onCodeChange={() => {}}
               onSubmitCode={async () => {}}
+              onRunCode={async () => ({
+                passed: 0,
+                failed: 0,
+                total: 0,
+                results: [],
+                error: 'Execution is disabled on completed interviews.',
+              })}
               readOnly={true}
             />
           )}

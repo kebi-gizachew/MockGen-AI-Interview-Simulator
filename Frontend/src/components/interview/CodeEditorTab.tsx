@@ -1,119 +1,82 @@
 import React, { useState } from 'react';
 import Editor from '@monaco-editor/react';
-import { CodeSubmission } from '../../types';
+import { CodeSubmission, CodeRunResult } from '../../types';
 import { Button } from '../common/Button';
 import { Input } from '../common/Input';
 import { Badge } from '../common/Badge';
-import { Code2, Play, Send, History, Trash2, Terminal, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { Code2, Play, Send, History, Trash2, Terminal, CheckCircle2, XCircle, Clock } from 'lucide-react';
 import { formatTimeAgo } from '../../utils/formatters';
 
 export interface CodeEditorTabProps {
   submissions: CodeSubmission[];
+  /** Controlled editor state owned by the page so tab switches never lose code. */
+  language: string;
+  codeBuffers: Record<string, string>;
+  onLanguageChange: (language: string) => void;
+  onCodeChange: (language: string, value: string) => void;
+  onResetCode?: (language: string) => void;
   onSubmitCode: (params: { language: string; code: string; notes?: string }) => Promise<void>;
+  onRunCode: (language: string, code: string) => Promise<CodeRunResult>;
   onDeleteSubmission?: (submissionId: string) => Promise<void>;
   readOnly?: boolean;
 }
 
-const DEFAULT_STARTER_CODE: Record<string, string> = {
-  javascript: `// Write your JavaScript solution here
-function rateLimiter(clientIp) {
-  console.log("Checking rate limit for IP:", clientIp);
-  const maxRequests = 100;
-  return { allowed: true, remaining: maxRequests - 1 };
-}
-
-// Test execution:
-console.log(rateLimiter("192.168.1.1"));
-`,
-  typescript: `// Write your TypeScript solution here
-interface LimitResult {
-  allowed: boolean;
-  remaining: number;
-}
-
-function rateLimiter(clientIp: string): LimitResult {
-  console.log("Checking rate limit for IP:", clientIp);
-  return { allowed: true, remaining: 99 };
-}
-
-console.log(rateLimiter("10.0.0.1"));
-`,
-  python: `# Write your Python solution here
-def rate_limiter(client_ip: str) -> dict:
-    print(f"Checking rate limit for IP: {client_ip}")
-    return {"allowed": True, "remaining": 99}
-
-print(rate_limiter("127.0.0.1"))
-`,
+const FALLBACK_STARTER_CODE: Record<string, string> = {
+  javascript: '// Write your JavaScript solution here\nfunction solution() {\n  // implement the target function\n}\n',
+  typescript: '// Write your TypeScript solution here\nfunction solution(): void {\n  // implement the target function\n}\n',
+  python: '# Write your Python solution here\ndef solution():\n    # implement the target function\n    pass\n',
+  java: '// Write your Java solution here\npublic class Solution {\n    public static void main(String[] args) {}\n}\n',
+  cpp: '// Write your C++ solution here\n#include <vector>\nusing namespace std;\n\nclass Solution {\npublic:\n    void solution() {}\n};\n',
 };
+
+const LANGUAGES = [
+  { id: 'javascript', label: 'JavaScript (Node.js)' },
+  { id: 'typescript', label: 'TypeScript' },
+  { id: 'python', label: 'Python 3' },
+  { id: 'java', label: 'Java 17' },
+  { id: 'cpp', label: 'C++17' },
+];
 
 export const CodeEditorTab: React.FC<CodeEditorTabProps> = ({
   submissions,
+  language,
+  codeBuffers,
+  onLanguageChange,
+  onCodeChange,
+  onResetCode,
   onSubmitCode,
+  onRunCode,
   onDeleteSubmission,
   readOnly = false,
 }) => {
-  const [language, setLanguage] = useState<string>('javascript');
-  const [code, setCode] = useState<string>(DEFAULT_STARTER_CODE.javascript);
+  // Buffers are owned by the page (survives tab switches + refreshes).
+  const code = codeBuffers[language] ?? FALLBACK_STARTER_CODE[language] ?? '';
   const [notes, setNotes] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [selectedSubmission, setSelectedSubmission] = useState<CodeSubmission | null>(null);
 
-  // Run Code Console state
+  // Run Code state
   const [isRunning, setIsRunning] = useState<boolean>(false);
-  const [consoleLogs, setConsoleLogs] = useState<{ type: 'log' | 'error' | 'info'; text: string }[] | null>(null);
+  const [runResult, setRunResult] = useState<CodeRunResult | null>(null);
 
   const handleLanguageChange = (newLang: string) => {
-    setLanguage(newLang);
-    if (!code || Object.values(DEFAULT_STARTER_CODE).includes(code)) {
-      setCode(DEFAULT_STARTER_CODE[newLang] || '// Write code here\n');
-    }
+    onLanguageChange(newLang);
+    setRunResult(null);
   };
 
-  const handleRunCode = () => {
+  const handleRunCode = async () => {
+    if (!code.trim() || isRunning || readOnly) return;
     setIsRunning(true);
-    setConsoleLogs([]);
-
-    const logs: { type: 'log' | 'error' | 'info'; text: string }[] = [];
-
-    setTimeout(() => {
-      try {
-        if (language === 'javascript' || language === 'typescript') {
-          const originalConsoleLog = console.log;
-          const capturedLogs: string[] = [];
-
-          console.log = (...args: unknown[]) => {
-            capturedLogs.push(args.map((a) => (typeof a === 'object' ? JSON.stringify(a, null, 2) : String(a))).join(' '));
-          };
-
-          try {
-            // Strip simple TS type annotations if needed
-            const executableCode = code.replace(/:\s*LimitResult/g, '').replace(/:\s*string/g, '');
-            // Execute in safe Function scope
-            const runner = new Function(executableCode);
-            runner();
-          } finally {
-            console.log = originalConsoleLog;
-          }
-
-          if (capturedLogs.length > 0) {
-            capturedLogs.forEach((l) => logs.push({ type: 'log', text: l }));
-          } else {
-            logs.push({ type: 'info', text: 'Code executed cleanly with no output.' });
-          }
-        } else {
-          // Python execution simulation
-          logs.push({ type: 'info', text: `[Python Runtime] Interpreted ${language} script successfully.` });
-          logs.push({ type: 'log', text: "{'allowed': True, 'remaining': 99}" });
-        }
-      } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        logs.push({ type: 'error', text: `Runtime Error: ${errorMsg}` });
-      }
-
-      setConsoleLogs(logs);
+    setRunResult(null);
+    try {
+      const result = await onRunCode(language, code);
+      setRunResult(result);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to run code.';
+      setRunResult({ passed: 0, failed: 0, total: 0, results: [], error: msg });
+    } finally {
       setIsRunning(false);
-    }, 400);
+    }
   };
 
   const handleSubmit = async () => {
@@ -129,6 +92,24 @@ export const CodeEditorTab: React.FC<CodeEditorTabProps> = ({
     }
   };
 
+  const stringifyValue = (value: unknown) => {
+    if (value === null || value === undefined) return String(value);
+    if (typeof value === 'string') return `"${value}"`;
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  };
+
+  const classifyError = (error: string): string => {
+    if (/compil\w* error/i.test(error)) return 'Compilation Error';
+    if (/timed out|time limit/i.test(error)) return 'Time Limit Exceeded';
+    if (/runtime error/i.test(error)) return 'Runtime Error';
+    if (/judg\w* service|rate-limit/i.test(error)) return 'Judge Service Unavailable';
+    return 'Execution Error';
+  };
+
   return (
     <div className="flex flex-col lg:flex-row h-full min-h-[550px] border border-slate-800 rounded-2xl overflow-hidden glass-panel">
       {/* Code Editor Container */}
@@ -142,8 +123,21 @@ export const CodeEditorTab: React.FC<CodeEditorTabProps> = ({
             </span>
           </div>
 
+          {!selectedSubmission && onResetCode && !readOnly && (
+            <button
+              onClick={() => {
+                if (confirm(`Reset the ${language} editor back to the starter code?`)) {
+                  onResetCode(language);
+                }
+              }}
+              className="text-[10px] font-semibold text-slate-500 hover:text-slate-300 transition-colors px-2 py-1 rounded-lg hover:bg-slate-800"
+              title="Reset this language buffer to the starter code"
+            >
+              Reset Code
+            </button>
+          )}
+
           <div className="flex items-center gap-3">
-            {/* Language Selector */}
             <div className="flex items-center gap-2">
               <label className="text-xs font-semibold text-slate-400">Language:</label>
               <select
@@ -152,19 +146,21 @@ export const CodeEditorTab: React.FC<CodeEditorTabProps> = ({
                 disabled={Boolean(selectedSubmission) || readOnly}
                 className="bg-slate-950 text-slate-200 text-xs font-semibold rounded-lg px-3 py-1.5 border border-slate-700 focus:outline-none focus:border-purple-500"
               >
-                <option value="javascript">JavaScript (Node.js)</option>
-                <option value="typescript">TypeScript</option>
-                <option value="python">Python 3</option>
+                {LANGUAGES.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.label}
+                  </option>
+                ))}
               </select>
             </div>
 
-            {/* Run Code Button */}
             {!selectedSubmission && (
               <Button
                 variant="secondary"
                 size="sm"
                 onClick={handleRunCode}
                 isLoading={isRunning}
+                disabled={readOnly}
                 leftIcon={<Play className="w-3.5 h-3.5 fill-current text-emerald-400" />}
               >
                 Run Code
@@ -190,7 +186,7 @@ export const CodeEditorTab: React.FC<CodeEditorTabProps> = ({
             height="100%"
             language={selectedSubmission ? selectedSubmission.language : language}
             value={selectedSubmission ? selectedSubmission.code : code}
-            onChange={(val) => !selectedSubmission && setCode(val || '')}
+            onChange={(val) => !selectedSubmission && onCodeChange(language, val || '')}
             theme="vs-dark"
             options={{
               readOnly: Boolean(selectedSubmission) || readOnly,
@@ -203,34 +199,105 @@ export const CodeEditorTab: React.FC<CodeEditorTabProps> = ({
           />
         </div>
 
-        {/* Console Execution Logs Window */}
-        {consoleLogs && (
-          <div className="bg-slate-950 border-t border-slate-800 p-3 max-h-36 overflow-y-auto font-mono text-xs space-y-1">
-            <div className="flex items-center justify-between text-slate-400 border-b border-slate-800 pb-1 mb-1">
-              <span className="flex items-center gap-1 font-bold text-slate-300">
-                <Terminal className="w-3.5 h-3.5 text-purple-400" /> Output Console
-              </span>
+        {/* Test Results Panel */}
+        {runResult && (
+          <div className="bg-slate-950 border-t border-slate-800 max-h-64 overflow-y-auto">
+            <div className="p-3 flex items-center justify-between border-b border-slate-800 bg-slate-900/60">
+              <div className="flex items-center gap-3 flex-wrap">
+                <Terminal className="w-4 h-4 text-purple-400" />
+                {runResult.error ? (
+                  <span className="text-xs font-bold text-rose-400">
+                    <XCircle className="w-3.5 h-3.5 inline mr-1" />
+                    {classifyError(runResult.error)}
+                  </span>
+                ) : (
+                  <>
+                    <span className="text-xs font-bold text-emerald-400">
+                      <CheckCircle2 className="w-3.5 h-3.5 inline mr-1" />
+                      {runResult.passed}/{runResult.total} passed
+                    </span>
+                    {runResult.failed > 0 && (
+                      <span className="text-xs font-bold text-rose-400">
+                        <XCircle className="w-3.5 h-3.5 inline mr-1" />
+                        {runResult.failed} failed
+                      </span>
+                    )}
+                  </>
+                )}
+                {(typeof runResult.runtimeMs === 'number' || runResult.memoryKb) && (
+                  <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {typeof runResult.runtimeMs === 'number' ? `${runResult.runtimeMs}ms` : ''}
+                    {runResult.runtimeMs !== undefined && runResult.memoryKb ? ' · ' : ''}
+                    {runResult.memoryKb ? `${(runResult.memoryKb / 1024).toFixed(1)}MB` : ''}
+                  </span>
+                )}
+              </div>
               <button
-                onClick={() => setConsoleLogs(null)}
+                onClick={() => setRunResult(null)}
                 className="text-[10px] text-slate-500 hover:text-slate-300"
               >
                 Clear
               </button>
             </div>
-            {consoleLogs.map((log, i) => (
-              <div
-                key={i}
-                className={
-                  log.type === 'error'
-                    ? 'text-rose-400 font-semibold'
-                    : log.type === 'info'
-                    ? 'text-slate-400 italic'
-                    : 'text-emerald-300'
-                }
-              >
-                {log.text}
+
+            {runResult.error ? (
+              <div className="p-3 space-y-2">
+                <p className="text-xs text-rose-400 font-mono whitespace-pre-wrap">{runResult.error}</p>
+                {runResult.consoleOutput && runResult.consoleOutput.length > 0 && (
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Console Output</p>
+                    {runResult.consoleOutput.map((line, i) => (
+                      <p key={i} className="text-xs text-emerald-300 font-mono">
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                )}
               </div>
-            ))}
+            ) : (
+              <div className="p-3 space-y-2">
+                {runResult.results.map((tc, index) => (
+                  <div
+                    key={index}
+                    className={`p-2.5 rounded-lg border text-xs font-mono ${
+                      tc.passed
+                        ? 'bg-emerald-500/5 border-emerald-500/20'
+                        : 'bg-rose-500/5 border-rose-500/20'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <span className={`font-bold ${tc.passed ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {tc.passed ? '✓' : '✗'} Test Case #{index + 1}
+                      </span>
+                      {!tc.passed && tc.error && (
+                        <span className="text-[10px] text-rose-400">Error: {tc.error}</span>
+                      )}
+                    </div>
+                    {!tc.passed && !tc.error && (
+                      <div className="space-y-0.5 text-slate-400">
+                        <p>
+                          Expected: <span className="text-slate-200">{stringifyValue(tc.expected)}</span>
+                        </p>
+                        <p>
+                          Actual: <span className="text-slate-200">{stringifyValue(tc.actual)}</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {runResult.consoleOutput && runResult.consoleOutput.length > 0 && (
+                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mb-1">Console Output</p>
+                    {runResult.consoleOutput.map((line, i) => (
+                      <p key={i} className="text-xs text-emerald-300 font-mono">
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -275,6 +342,7 @@ export const CodeEditorTab: React.FC<CodeEditorTabProps> = ({
           ) : (
             submissions.map((sub) => {
               const isSelected = selectedSubmission?.id === sub.id;
+              const passed = sub.passedTests !== null && sub.passedTests !== undefined;
               return (
                 <div
                   key={sub.id}
@@ -290,6 +358,17 @@ export const CodeEditorTab: React.FC<CodeEditorTabProps> = ({
                       {sub.language}
                     </Badge>
                     <div className="flex items-center gap-2">
+                      {passed && (
+                        <span
+                          className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            sub.passedTests === sub.totalTests
+                              ? 'bg-emerald-500/15 text-emerald-400'
+                              : 'bg-amber-500/15 text-amber-400'
+                          }`}
+                        >
+                          {sub.passedTests}/{sub.totalTests}
+                        </span>
+                      )}
                       <span className="text-[10px] text-slate-400">
                         {formatTimeAgo(sub.createdAt)}
                       </span>
@@ -300,6 +379,7 @@ export const CodeEditorTab: React.FC<CodeEditorTabProps> = ({
                             if (confirm('Delete this code submission?')) {
                               onDeleteSubmission(sub.id);
                             }
+           
                           }}
                           className="text-slate-500 hover:text-rose-400"
                         >

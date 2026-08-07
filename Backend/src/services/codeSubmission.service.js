@@ -1,7 +1,15 @@
 const prisma = require("../config/db");
 const HttpError = require("../utils/httpError");
 
-const createSubmission = async ({ interviewSessionId, language, code, notes }) => {
+const createSubmission = async ({
+  interviewSessionId,
+  language,
+  code,
+  notes,
+  result,
+  passedTests,
+  totalTests,
+}) => {
   const trimmedLanguage = String(language || "").trim();
   const trimmedCode = String(code || "").trim();
 
@@ -15,6 +23,9 @@ const createSubmission = async ({ interviewSessionId, language, code, notes }) =
       language: trimmedLanguage,
       code: trimmedCode,
       notes: notes?.trim() || null,
+      result: result ?? undefined,
+      passedTests: passedTests ?? null,
+      totalTests: totalTests ?? null,
     },
   });
 };

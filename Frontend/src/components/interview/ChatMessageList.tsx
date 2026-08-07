@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { Message } from '../../types';
 import { getScoreBadgeColor, formatTimeAgo } from '../../utils/formatters';
+import { SimpleMarkdown } from '../common/SimpleMarkdown';
 import { Bot, User as UserIcon, Sparkles, Award } from 'lucide-react';
 
 export interface ChatMessageListProps {
@@ -116,13 +117,13 @@ export const ChatMessageList: React.FC<ChatMessageListProps> = ({ messages, isTh
                 </div>
 
                 <div
-                  className={`p-4 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                  className={`p-4 rounded-2xl text-sm leading-relaxed ${
                     isAssistant
                       ? 'glass-panel text-slate-100 rounded-tl-none border-slate-800'
-                      : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-tr-none shadow-lg shadow-purple-600/15'
+                      : 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-tr-none shadow-lg shadow-purple-600/15 whitespace-pre-wrap'
                   }`}
                 >
-                  {msg.content}
+                  {isAssistant ? <SimpleMarkdown text={msg.content} /> : msg.content}
                 </div>
               </div>
             </div>

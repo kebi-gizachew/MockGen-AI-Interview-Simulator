@@ -63,9 +63,41 @@ export const SessionCard: React.FC<SessionCardProps> = ({ session, onDelete }) =
         </div>
 
         {/* Title */}
-        <h4 className="text-base font-bold text-slate-100 mb-2 line-clamp-1 group-hover:text-purple-300 transition-colors">
+        <h4 className="text-base font-bold text-slate-100 mb-1 line-clamp-1 group-hover:text-purple-300 transition-colors">
           {session.title || 'Untitled Interview Session'}
         </h4>
+
+        {/* Setup badges */}
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {session.company && (
+            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/25">
+              {session.company}
+            </span>
+          )}
+          {session.role && (
+            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+              {session.role}
+            </span>
+          )}
+          {session.difficulty && (
+            <span
+              className={`text-[10px] font-bold px-2 py-0.5 rounded-full border capitalize ${
+                session.difficulty === 'easy'
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/25'
+                  : session.difficulty === 'medium'
+                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/25'
+                  : 'bg-rose-500/15 text-rose-300 border-rose-500/25'
+              }`}
+            >
+              {session.difficulty}
+            </span>
+          )}
+          {session.score !== null && session.score !== undefined && (
+            <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/25">
+              Score: {session.score}/100
+            </span>
+          )}
+        </div>
 
         {/* Timestamps */}
         <p className="text-xs text-slate-400 mb-4">

@@ -52,6 +52,18 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
     return hrs > 0 ? `${hrs}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
   };
 
+  // Countdown when a duration is configured
+  const durationSeconds = session.durationMinutes ? session.durationMinutes * 60 : null;
+  const remainingSeconds = durationSeconds !== null ? Math.max(0, durationSeconds - elapsedSeconds) : null;
+  const countdownColor =
+    remainingSeconds === null
+      ? 'text-purple-300 bg-purple-500/10 border-purple-500/20'
+      : remainingSeconds > 300
+      ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'
+      : remainingSeconds > 60
+      ? 'text-amber-300 bg-amber-500/10 border-amber-500/20'
+      : 'text-rose-300 bg-rose-500/10 border-rose-500/20';
+
   const isActive = session.status === 'active';
 
   const handleSaveTitle = async () => {
@@ -115,11 +127,40 @@ export const SessionHeader: React.FC<SessionHeaderProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-3 text-xs text-slate-400 mt-0.5">
-            <span className="flex items-center gap-1 font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
-              <Clock className="w-3 h-3 text-purple-400" />
-              {isActive ? formatTimer(elapsedSeconds) : 'Session Ended'}
-            </span>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mt-0.5">
+            {remainingSeconds !== null && isActive ? (
+              <span className={`flex items-center gap-1 font-mono px-2 py-0.5 rounded border ${countdownColor}`}>
+                <Clock className="w-3 h-3" />
+                {formatTimer(remainingSeconds)} remaining
+              </span>
+            ) : (
+              <span className="flex items-center gap-1 font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                <Clock className="w-3 h-3 text-purple-400" />
+                {isActive ? formatTimer(elapsedSeconds) : 'Session Ended'}
+              </span>
+            )}
+
+            {session.difficulty && (
+              <span className={`px-2 py-0.5 rounded border capitalize font-semibold ${
+                session.difficulty === 'easy'
+                  ? 'text-emerald-300 bg-emerald-500/10 border-emerald-500/20'
+                  : session.difficulty === 'medium'
+                  ? 'text-amber-300 bg-amber-500/10 border-amber-500/20'
+                  : 'text-rose-300 bg-rose-500/10 border-rose-500/20'
+              }`}>
+                {session.difficulty}
+              </span>
+            )}
+            {session.company && (
+              <span className="px-2 py-0.5 rounded border border-purple-500/20 bg-purple-500/10 text-purple-300 font-semibold">
+                {session.company}
+              </span>
+            )}
+            {session.language && (
+              <span className="px-2 py-0.5 rounded border border-indigo-500/20 bg-indigo-500/10 text-indigo-300 font-semibold">
+                {session.language}
+              </span>
+            )}
 
             <span className="hidden sm:flex items-center gap-1.5 text-[11px]">
               {isConnected ? (

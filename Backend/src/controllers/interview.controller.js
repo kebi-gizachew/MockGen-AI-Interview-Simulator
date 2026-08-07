@@ -3,10 +3,15 @@ const interviewService = require("../services/interview.service");
 const aiInterviewService = require("../services/aiInterview.service");
 
 const createSession = asyncHandler(async (req, res) => {
-  const { title } = req.body;
+  const { title, company, role, difficulty, language, durationMinutes } = req.body;
   const result = await aiInterviewService.startInterview({
     userId: req.user.id,
     title,
+    company,
+    role,
+    difficulty,
+    language,
+    durationMinutes,
   });
 
   res.status(201).json({
@@ -38,6 +43,7 @@ const getSession = asyncHandler(async (req, res) => {
     sessionId: req.params.id,
     userId: req.user.id,
     includeMessages: true,
+    includeQuestion: true,
   });
 
   res.status(200).json({
@@ -129,6 +135,33 @@ const deleteCodeSubmission = asyncHandler(async (req, res) => {
   });
 });
 
+const runCode = asyncHandler(async (req, res) => {
+  const { language, code } = req.body;
+  const result = await interviewService.runCode({
+    sessionId: req.params.id,
+    userId: req.user.id,
+    language,
+    code,
+  });
+
+  res.status(200).json({
+    status: "success",
+    data: { result },
+  });
+});
+
+const getFeedback = asyncHandler(async (req, res) => {
+  const feedback = await interviewService.getFeedback({
+    sessionId: req.params.id,
+    userId: req.user.id,
+  });
+
+  res.status(200).json({
+    status: "success",
+    data: { feedback },
+  });
+});
+
 module.exports = {
   createSession,
   getUserSessions,
@@ -139,4 +172,6 @@ module.exports = {
   getCodeSubmissions,
   submitCode,
   deleteCodeSubmission,
+  runCode,
+  getFeedback,
 };
