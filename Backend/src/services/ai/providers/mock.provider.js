@@ -1,5 +1,13 @@
 const { AI_RESPONSE_TYPES } = require("../../../constants/interview.constants");
 const { recommendationFromScore } = require("../../../utils/recommendation");
+const {
+  analyzeAnswer,
+  extractTopics,
+  detectAlgorithmKeywords,
+  isDontKnowResponse,
+  GENERIC_TOPICS,
+  FILLER_PATTERN,
+} = require("../answer-analysis");
 
 /**
  * Mock AI provider — used when no OPENAI_API_KEY is configured.
@@ -11,18 +19,6 @@ const { recommendationFromScore } = require("../../../utils/recommendation");
  */
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-
-// A response counts as "I don't know" only when the don't-know phrase is the
-// dominant content. If the message also names a data structure / algorithm /
-// complexity / approach, the candidate is reasoning while hedging — treat it
-// as substantive so the interviewer engages with it (Issue 3: never ignore
-// the actual answer). Mirrors the signal logic in aiInterview.service.
-const DONT_KNOW_PHRASE =
-  /\bi don'?t know\b|\bi(?:'m| am) not sure\b|\bnot sure\b|\bno idea\b|\bi have no idea\b|\bdon'?t understand\b|\bdon'?t know how\b|\bcan'?t think\b|\bstuck\b|\bunsure\b/i;
-const SUBSTANTIVE_MARKER =
-  /\b(hash ?map|hash table|dictionary|two pointers?|sliding window|binary search|recursi\w+|bfs|dfs|sort\w*|stacks?|queues?|heap|priority queue|greedy|dynamic programming|\bdp\b|memoiz\w+|backtrack\w*|union find|linked list|monotonic)\b|o\(|time complexity|space complexity|big o|approach|algorithm|brute|optimize|data structure|complexity|edge case/i;
-const isDontKnowResponse = (text) =>
-  DONT_KNOW_PHRASE.test(text) && !SUBSTANTIVE_MARKER.test(text);
 
 const questionOf = (ctx) => (ctx && ctx.question) || {};
 const signalsOf = (ctx) => (ctx && ctx.performanceSignals) || {};
@@ -65,61 +61,35 @@ const lastAssistantMessage = (ctx) => {
   return "";
 };
 
-// Interview-topic vocabulary used to decide whether a candidate reply actually
-// addresses the pending interviewer question (response-driven conversation).
-const TOPIC_WORDS = [
-  ["hash map", /\bhash\s*map|hashmap|hash table|dictionary\b/i],
-  ["two pointers", /\btwo pointers?|two-pointer\b/i],
-  ["sliding window", /\bsliding window\b/i],
-  ["binary search", /\bbinary search\b/i],
-  ["recursion", /\brecursi\w+/i],
-  ["bfs/dfs", /\b(bfs|dfs|breadth|depth)\b/i],
-  ["sorting", /\bsort\w*\b/i],
-  ["stack", /\bstacks?\b/i],
-  ["queue", /\bqueues?\b/i],
-  ["heap", /\bheap\b|priority queue/i],
-  ["greedy", /\bgreedy\b/i],
-  ["dynamic programming", /\bdynamic programming|\bdp\b|memoiz\w+/i],
-  ["backtracking", /\bbacktrack\w+/i],
-  ["union find", /\bunion find\b/i],
-  ["linked list", /\blinked list\b/i],
-  ["arrays", /\barrays?\b/i],
-  ["strings", /\bstrings?\b/i],
-  ["trees", /\btrees?\b/i],
-  ["graphs", /\bgraphs?\b/i],
-  ["complexity", /\bcomplexity|big o|o\(|time\b|space\b/i],
-  ["edge cases", /\bedge cases?\b/i],
-  ["approach", /\bapproach|algorithm\b/i],
-  ["brute force", /\bbrute\b/i],
-  ["example", /\bexample|walk through|sample\b/i],
-  ["input/output", /\binput|output\b/i],
-  ["optimization", /\boptimiz\w+\b/i],
-  ["data structure", /\bdata structure\b/i],
-];
-
-const extractTopics = (text) =>
-  TOPIC_WORDS.filter(([, re]) => re.test(String(text || ""))).map(([name]) => name);
-
-// Generic meta-topics are how candidates ANSWER data-structure questions
-// ("because of O(1) lookups", "my approach is...", "edge cases would...") — a
-// reply mentioning these is engaged with the question, so they never trigger a
-// topic-change challenge. Only a reply naming a DIFFERENT specific structure /
-// algorithm (arrays vs hash map, sorting vs stack) counts as a topic change.
-const GENERIC_TOPICS = new Set([
-  "complexity",
-  "approach",
-  "data structure",
-  "optimization",
-  "edge cases",
-  "brute force",
-  "example",
-  "input/output",
-]);
-
-// Off-topic chatter patterns that do NOT constitute an answer to the pending
-// question (used with short replies to catch pure non-answers).
-const FILLER_PATTERN =
-  /\b(i like|i prefer|that'?s (nice|great|interesting|good)|okay?|sure|hmm|interesting|not really|maybe|i guess)\b/i;
+// Technique-specific follow-up probes: when the candidate NAMES an algorithm /
+// data structure, probe THAT choice (Issue 3 — the response depends on what
+// they actually said, e.g. "sliding window" gets 'what condition lets the
+// window expand or shrink?', not a generic 'walk me through it').
+const keywordFollowUp = (keyword, title, fn) => {
+  const probes = {
+    "hash map": `You mentioned a hash map. What exactly would it store for ${title}, and why does O(1) average lookup beat scanning every candidate pair with nested loops?`,
+    "two pointers": `You mentioned two pointers. What must be true about the input for two pointers to work on ${title}, and how do the pointers move?`,
+    "sliding window": `Why does a sliding window apply to ${title}? What condition allows the window to expand or shrink, and what invariant does it maintain?`,
+    "binary search": `What condition makes binary search applicable to ${title}, and what invariant are you maintaining while narrowing the range?`,
+    recursion: `What would the base case and the recursive case be for ${title}?`,
+    bfs: `Why breadth-first for ${title} — what does BFS guarantee that DFS doesn't here?`,
+    dfs: `Why depth-first for ${title} — where does DFS fit the structure better or save memory?`,
+    sorting: `How would sorting the input help solve ${title}, and what would that cost in time?`,
+    stack: `What would you push onto the stack for ${title}, and when would you pop?`,
+    queue: `What order would a queue preserve for ${title}?`,
+    heap: `What would you store in the heap for ${title}, and what priority orders it?`,
+    greedy: `What local decision would you lock in at each step for ${title}, and why is it safe?`,
+    "dynamic programming": `What is the subproblem for ${title}, and what recurrence relates the subproblems?`,
+    backtracking: `What choices would you explore and undo for ${title}?`,
+    "union find": `What would the connected components represent for ${title}?`,
+    "linked list": `What about the linked-list structure matters most for ${title}?`,
+    monotonic: `What makes a monotonic stack or queue the right choice for ${title}?`,
+  };
+  return (
+    probes[keyword] ||
+    `You mentioned ${keyword}. Walk me through how you'd apply it to ${title}: where exactly does it save work, and what would the time and space complexity be? Also think about edge cases like empty input or duplicates.`
+  );
+};
 
 // Rephrase the pending question when the candidate did not actually answer it —
 // a real interviewer re-engages the same topic rather than moving on.
@@ -156,36 +126,9 @@ const rephraseForTopic = (topic, title) => {
   return rephrases[topic] || `tell me more about ${topic} as it applies to ${title}.`;
 };
 
-// Data structures / algorithms mentioned by the candidate, used to steer the
-// next follow-up toward their actual plan.
-// Each group is [displayKeyword, ...regexAlternatives]. The alternatives are
-// matched with word boundaries so "sort" never matches "resorting".
-const ALGO_KEYWORDS = [
-  ["hash map", "hash map", "hashmap", "hash table", "dictionary"],
-  ["two pointers", "two pointers", "two-pointer"],
-  ["sliding window", "sliding window"],
-  ["binary search", "binary search"],
-  ["recursion", "recursion", "recursive"],
-  ["bfs", "\\bbfs\\b", "breadth"],
-  ["dfs", "\\bdfs\\b", "depth"],
-  ["sorting", "\\bsort\\b", "sorting"],
-  ["stack", "\\bstacks?\\b"],
-  ["queue", "\\bqueues?\\b"],
-  ["heap", "\\bheap\\b", "priority queue"],
-  ["greedy", "greedy"],
-  ["dynamic programming", "dynamic programming", "\\bdp\\b", "memoiz"],
-  ["backtracking", "backtrack"],
-  ["union find", "union find"],
-  ["linked list", "linked list"],
-  ["monotonic", "monotonic"],
-];
-
-const detectAlgoKeywords = (text) => {
-  const lower = String(text || "").toLowerCase();
-  return ALGO_KEYWORDS.filter((group) =>
-    group.slice(1).some((k) => new RegExp(k).test(lower))
-  ).map((group) => group[0]);
-};
+// detectAlgorithmKeywords (shared from answer-analysis) drives the follow-up
+// probes; local alias keeps call sites readable.
+const detectAlgoKeywords = detectAlgorithmKeywords;
 
 // Derive the interview stage from context as a fallback (aiInterview.service
 // normally injects ctx.stage, but the provider should never assume it).
@@ -389,6 +332,28 @@ const generateMockInterviewResponse = async ({ userMessage, interviewContext }) 
     };
   }
 
+  // --- Incorrect technical claim (e.g. "a hashmap makes this O(log n)"):
+  //     push back with the correct fact instead of moving on (Issue 3). The
+  //     shared answer-analysis detects the wrong structure+complexity pairing.
+  {
+    const analysis = analyzeAnswer({
+      userMessage,
+      pendingQuestion: lastAssistantMessage(interviewContext),
+      question: interviewContext?.question,
+      history: historyOf(interviewContext),
+    });
+    if (
+      analysis.incorrectComplexity &&
+      !hasAsked(interviewContext, /revisit|not .* but|actually is|correction/)
+    ) {
+      return {
+        type: AI_RESPONSE_TYPES.QUESTION,
+        message: `Let's revisit that — ${analysis.incorrectComplexity.correction}. Can you walk me through how that affects the overall complexity of your approach for ${title}?`,
+        score: 0,
+      };
+    }
+  }
+
   // --- Candidate says "I don't know" / is stuck: guide learning, never praise ---
   if (isDontKnowResponse(lower)) {
     const dontKnowCount = signalsOf(interviewContext).dontKnowResponses || 0;
@@ -425,11 +390,18 @@ const generateMockInterviewResponse = async ({ userMessage, interviewContext }) 
       stage !== "post_submission" &&
       pendingTopics.length > 0 &&
       pendingTopics.length <= 3;
-    const answeredTopic = evaluated && pendingTopics.some((t) => replyTopics.includes(t));
     // Only a reply naming a DIFFERENT specific structure/algorithm is a topic
     // change — generic meta-topics (complexity, approach, edge cases...) mean
     // the candidate is answering and the reply falls through to normal logic.
     const specificReplyTopics = replyTopics.filter((t) => !GENERIC_TOPICS.has(t));
+    // A specific technique (e.g. "sliding window") answers a generic pending
+    // question ("what algorithm would you use?") — only a reply naming a
+    // DIFFERENT specific topic is a real topic change.
+    const answeredTopic =
+      evaluated &&
+      (pendingTopics.some((t) => replyTopics.includes(t)) ||
+        (pendingTopics.every((t) => GENERIC_TOPICS.has(t)) &&
+          specificReplyTopics.length > 0));
     const changedTopic =
       evaluated && !answeredTopic && specificReplyTopics.length > 0;
     const gaveNonAnswer =
@@ -556,11 +528,13 @@ const generateMockInterviewResponse = async ({ userMessage, interviewContext }) 
           score: 0,
         };
       }
-      // Correct answer chain: confirm the specific fact, then build on it.
+      // Correct answer chain: confirm the specific fact, then build on it
+      // (Issue 3 example: hash map + O(1) -> compare against the nested-loop
+      // brute force instead of a generic "good").
       if (/o\(\s*1\s*\)|constant[- ]?time|o\(\s*c\s*\)/.test(lower)) {
         return {
           type: AI_RESPONSE_TYPES.QUESTION,
-          message: `Correct — that operation is constant time. Given that, how does it affect the overall complexity of ${fn} for ${title}?`,
+          message: `Correct — that operation is constant time. Given that, how does it change the overall complexity of ${fn} for ${title} compared to the brute-force approach?`,
           score: 0,
         };
       }
@@ -582,13 +556,14 @@ const generateMockInterviewResponse = async ({ userMessage, interviewContext }) 
       };
     }
 
-    // Ground the follow-up in the candidate's actual plan when they named one.
+    // Ground the follow-up in the candidate's actual plan when they named one
+    // (topic-specific probe so the reply visibly depends on what they said).
     const escapedKeyword = (kw) => kw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     if (algoKeywords.length > 0 && !hasAsked(interviewContext, new RegExp(escapedKeyword(algoKeywords[0])))) {
       const keyword = algoKeywords[0];
       return {
         type: AI_RESPONSE_TYPES.QUESTION,
-        message: `You mentioned ${keyword}. Walk me through how you'd apply it to ${title}: where exactly does it save work, and what would the time and space complexity be? Also think about edge cases like empty input or duplicates.`,
+        message: keywordFollowUp(keyword, title, fn),
         score: 0,
       };
     }

@@ -264,6 +264,23 @@ const googleAuthCallback = async ({ profile }) => {
         isVerified: true,
       },
     });
+
+    // Consistency with email/password registration (Issue 4): every brand-new
+    // account gets the welcome email — regardless of the sign-up provider. The
+    // welcome template thanks the user, confirms the account, and never asks
+    // for email verification. Best-effort: never fail the OAuth callback over
+    // mail being unavailable.
+    try {
+      await sendWelcomeEmail({
+        to: user.email,
+        name: user.name,
+      });
+    } catch (error) {
+      console.warn(
+        "[auth] Failed to send welcome email (google signup):",
+        error && error.message ? error.message : error
+      );
+    }
   }
 
   const token = generateToken(user.id);

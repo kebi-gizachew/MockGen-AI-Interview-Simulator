@@ -9,9 +9,13 @@ const { DIFFICULTIES } = require("../constants/interview.constants");
  * Selection is per-user and adaptive:
  *   - Company interview-frequency dominates: the most frequently reported
  *     questions at the target company are prioritised, then frequent ones,
- *     and only then less common ones.
+ *     and only then less common ones. Frequency is per (question, company)
+ *     pair via the QuestionCompany many-to-many join.
+ *   - A question appears in a company's pool whenever that company is
+ *     associated with it (no duplicated rows per company).
  *   - Questions the user already worked on are avoided when possible.
- *   - The user's role biases the topic pool (backend -> graphs/DP, etc.).
+ *   - The user's role biases the topic pool AND the per-question role
+ *     relevance metadata (backend -> graphs/DP, etc.).
  *   - Topics where the user historically scored lower get higher weight, so
  *     practice targets weaknesses instead of repeating strengths.
  *   - Difficulty/company filters are applied then relaxed gracefully so a
@@ -21,10 +25,10 @@ const { DIFFICULTIES } = require("../constants/interview.constants");
 // Role -> topic keywords that are relevant for that role. `null` means "all topics".
 const ROLE_TOPICS = {
   "software engineer intern": null,
-  "backend engineer": ["arrays", "hash", "strings", "stack", "trees", "graphs", "dynamic programming", "intervals", "binary search", "greedy", "queue"],
+  "backend engineer": ["arrays", "hash", "strings", "stack", "trees", "graphs", "bfs", "dfs", "dynamic programming", "intervals", "binary search", "greedy", "queue", "union find"],
   "frontend engineer": ["arrays", "hash", "strings", "trees", "stack", "two pointers", "sliding window", "heap"],
   "full stack engineer": ["arrays", "hash", "strings", "stack", "trees", "two pointers", "sliding window", "linked lists"],
-  "machine learning engineer": ["arrays", "hash", "strings", "dynamic programming", "two pointers", "sliding window", "graphs"],
+  "machine learning engineer": ["arrays", "hash", "strings", "dynamic programming", "two pointers", "sliding window", "graphs", "bfs", "dfs"],
   "data engineer": ["arrays", "hash", "strings", "dynamic programming", "heap", "binary search", "greedy"],
   "data scientist": ["arrays", "hash", "dynamic programming", "two pointers", "sliding window", "greedy"],
 };
@@ -72,10 +76,18 @@ const FREQUENCY_MULTIPLIER = {
   low: 0.45,
 };
 
+/**
+ * Frequency weight for a question. Prefers the (question, company) join row
+ * when the row was loaded (see getRandomQuestionForUser's include), so a
+ * question asked by many companies is ranked by its frequency at the CURRENT
+ * company, not its primary company. Falls back to the top-level primary-
+ * company values.
+ */
 const frequencyMultiplier = (question) => {
-  const rank = question.frequencyRank;
+  const link = question.companies && Array.isArray(question.companies) ? question.companies[0] : null;
+  const rank = link ? link.frequencyRank : question.frequencyRank;
+  const storedTier = link ? link.interviewFrequency : question.interviewFrequency;
   if (rank == null) return 1.0;
-  const storedTier = question.interviewFrequency;
   const tier =
     storedTier && FREQUENCY_TIERS.includes(storedTier) ? storedTier : tierForRank(rank);
   let multiplier = FREQUENCY_MULTIPLIER[tier];
@@ -86,25 +98,68 @@ const frequencyMultiplier = (question) => {
   return multiplier;
 };
 
+const slugify = (name) =>
+  String(name || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "company";
+
 /**
- * Upsert the bundled question bank into the database (idempotent).
+ * Upsert the bundled question bank into the database (idempotent). Also syncs
+ * the Company table and the QuestionCompany many-to-many links with per-company
+ * interview-frequency metadata.
  */
+// Run an async function over a list with bounded concurrency. The bundled
+// bank can be large; batching this way turns ~1,500 sequential DB round-trips
+// (slow against a remote database) into a handful of parallel waves.
+const mapLimit = async (items, limit, fn) => {
+  let i = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) {
+      const index = i++;
+      await fn(items[index], index);
+    }
+  });
+  await Promise.all(workers);
+};
+
 const seedQuestions = async () => {
   let count = 0;
 
-  for (const question of SEED_QUESTIONS) {
-    const existing = await prisma.question.findFirst({
-      where: { title: question.title },
+  // 1. Ensure every company referenced by the bank exists.
+  const companyNames = [
+    ...new Set(
+      SEED_QUESTIONS.flatMap((q) => (q.companies || []).filter(Boolean))
+    ),
+  ];
+  for (const name of companyNames) {
+    await prisma.company.upsert({
+      where: { name },
+      create: { name, slug: slugify(name) },
+      update: {},
     });
+  }
+
+  // Single lookups so the hot loop never hits the DB per question/link.
+  const companyRows = await prisma.company.findMany({ select: { id: true, name: true } });
+  const companyIdByName = new Map(companyRows.map((c) => [c.name, c.id]));
+  const existingRows = await prisma.question.findMany({ select: { id: true, title: true } });
+  const questionIdByTitle = new Map(existingRows.map((q) => [q.title, q.id]));
+
+  // 2. Upsert questions + their company links (idempotent).
+  await mapLimit(SEED_QUESTIONS, 8, async (question) => {
+    const companies = (question.companies || []).filter(Boolean);
+    const primary = question.company || companies[0] || null;
 
     const data = {
       title: question.title,
       description: question.description,
       difficulty: question.difficulty,
       topic: question.topic,
-      company: question.company ?? null,
+      company: primary,
       frequencyRank: question.frequencyRank ?? null,
       interviewFrequency: question.interviewFrequency ?? null,
+      roles: question.roles ?? [],
       functionName: question.functionName,
       argTypes: question.argTypes ?? null,
       examples: question.examples,
@@ -113,13 +168,40 @@ const seedQuestions = async () => {
       starterCode: question.starterCode,
     };
 
-    if (existing) {
-      await prisma.question.update({ where: { id: existing.id }, data });
-    } else {
-      await prisma.question.create({ data });
+    const existingId = questionIdByTitle.get(question.title);
+    const saved = existingId
+      ? await prisma.question.update({ where: { id: existingId }, data })
+      : await prisma.question.create({ data });
+    if (!existingId) {
       count += 1;
+      questionIdByTitle.set(question.title, saved.id);
     }
-  }
+
+    // Sync many-to-many company links with per-company frequency metadata.
+    for (const company of companies) {
+      const companyId = companyIdByName.get(company);
+      if (!companyId) continue;
+      const freq = (question.companyFrequencies && question.companyFrequencies[company]) || {};
+      await prisma.questionCompany.upsert({
+        where: {
+          questionId_companyId: {
+            questionId: saved.id,
+            companyId,
+          },
+        },
+        create: {
+          questionId: saved.id,
+          companyId,
+          frequencyRank: freq.frequencyRank ?? null,
+          interviewFrequency: freq.interviewFrequency ?? null,
+        },
+        update: {
+          frequencyRank: freq.frequencyRank ?? null,
+          interviewFrequency: freq.interviewFrequency ?? null,
+        },
+      });
+    }
+  });
 
   return count;
 };
@@ -179,12 +261,12 @@ const average = (values) =>
 
 /**
  * Weighted random pick. Candidates preferred: frequently reported company
- * questions (frequencyRank/interviewFrequency), in-role topics, company-
- * relevant topics, weaker topics, and questions not previously attempted.
- * Recent picks are penalised so rotation feels varied. Random jitter keeps
- * picks varied.
+ * questions (per-company frequencyRank/interviewFrequency), in-role topics,
+ * company-relevant topics, role-relevant questions, weaker topics, and
+ * questions not previously attempted. Recent picks are penalised so rotation
+ * feels varied. Random jitter keeps picks varied.
  */
-const pickWeighted = (candidates, { usedIds, topicScores, roleTopics, companyTopics, recentIds }) => {
+const pickWeighted = (candidates, { usedIds, topicScores, roleTopics, companyTopics, recentIds, role }) => {
   const recent = new Set(recentIds || []);
 
   const weights = candidates.map((question) => {
@@ -195,6 +277,14 @@ const pickWeighted = (candidates, { usedIds, topicScores, roleTopics, companyTop
 
     if (topicMatchesKeywords(question.topic, roleTopics)) weight *= 1.4;
     if (topicMatchesKeywords(question.topic, companyTopics)) weight *= 1.3;
+
+    // Per-question role relevance: when the user selected a role, questions
+    // marked relevant to it get a boost and clearly irrelevant ones a small
+    // penalty (never enough to override company-frequency ordering).
+    if (role && Array.isArray(question.roles) && question.roles.length > 0) {
+      if (question.roles.includes(role)) weight *= 1.25;
+      else weight *= 0.9;
+    }
 
     const scores = topicScores[question.topic];
     if (scores && scores.length > 0) {
@@ -231,13 +321,27 @@ const getRandomQuestionForUser = async ({ userId, difficulty, company, role, top
   const roleTopics = getRoleTopics(role);
   const companyTopics = getCompanyTopics(company);
 
-  // Lazy-seed the DB bank on first access when empty, and backfill frequency
-  // metadata on databases seeded before the ranking feature existed.
+  // Lazy-sync the DB bank on first access. The bundled bank is the source of
+  // truth: whenever the database holds fewer questions than the bank, or fewer
+  // many-to-many company links than the bank declares, the idempotent seeder
+  // upserts the missing rows. This covers fresh databases, databases seeded
+  // before the company-expansion feature existed, and deployments that add new
+  // questions to the bank later (the migration backfill alone only ever links
+  // each question to its primary company).
   try {
     const total = await prisma.question.count();
-    if (total === 0) {
+    const expectedLinks = SEED_QUESTIONS.reduce(
+      (sum, q) => sum + (q.companies || []).filter(Boolean).length,
+      0
+    );
+    const linkCount = await prisma.questionCompany.count();
+    if (total < SEED_QUESTIONS.length || linkCount < expectedLinks) {
       const seeded = await seedQuestions();
-      if (seeded > 0) console.log(`Seeded ${seeded} questions into the database.`);
+      if (seeded > 0) {
+        console.log(`Seeded ${seeded} new question(s) / synced company links.`);
+      } else {
+        console.log("Synced many-to-many company links.");
+      }
     } else {
       const missingFrequency = await prisma.question.count({
         where: { frequencyRank: null },
@@ -261,7 +365,11 @@ const getRandomQuestionForUser = async ({ userId, difficulty, company, role, top
     const where = {};
     if (difficultyOn && normalizedDifficulty) where.difficulty = normalizedDifficulty;
     if (topicOn && topic) where.topic = { contains: topic, mode: "insensitive" };
-    if (companyOn && company) where.company = company;
+    if (companyOn && company) {
+      // Many-to-many: the question is in the company's pool when any of its
+      // QuestionCompany links points at that company.
+      where.companies = { some: { company: { name: company } } };
+    }
     const key = JSON.stringify(where);
     if (!seenQueries.has(key)) {
       seenQueries.add(key);
@@ -276,7 +384,21 @@ const getRandomQuestionForUser = async ({ userId, difficulty, company, role, top
 
   try {
     for (const where of attemptQueries) {
-      questions = await prisma.question.findMany({ where });
+      questions = await prisma.question.findMany({
+        where,
+        // Load only the join row for the target company so the frequency
+        // multiplier ranks by this company's frequency for that question.
+        ...(company
+          ? {
+              include: {
+                companies: {
+                  where: { company: { name: company } },
+                  select: { frequencyRank: true, interviewFrequency: true },
+                },
+              },
+            }
+          : {}),
+      });
       if (questions.length > 0) break;
     }
   } catch (error) {
@@ -295,7 +417,9 @@ const getRandomQuestionForUser = async ({ userId, difficulty, company, role, top
       if (withTopic.length > 0) pool = withTopic;
     }
     if (company) {
-      const withCompany = pool.filter((q) => q.company === company);
+      const withCompany = pool.filter(
+        (q) => (q.companies || []).includes(company) || q.company === company
+      );
       if (withCompany.length > 0) pool = withCompany;
     }
     questions = pool;
@@ -304,7 +428,7 @@ const getRandomQuestionForUser = async ({ userId, difficulty, company, role, top
   // Prefer questions not yet attempted, but only if a varied pool remains.
   const fresh = questions.filter((q) => !usedIds.has(q.id));
   const pool = fresh.length >= 2 ? fresh : questions;
-  return pickWeighted(pool, { usedIds, topicScores, roleTopics, companyTopics, recentIds });
+  return pickWeighted(pool, { usedIds, topicScores, roleTopics, companyTopics, recentIds, role });
 };
 
 /**

@@ -2,6 +2,7 @@ const OpenAI = require("openai");
 const env = require("../../../config/env");
 const { AI_RESPONSE_TYPES } = require("../../../constants/interview.constants");
 const { RECOMMENDATIONS, recommendationFromScore } = require("../../../utils/recommendation");
+const { analyzeAnswer } = require("../answer-analysis");
 
 const STAGE_GUIDANCE = {
   opening: [
@@ -35,6 +36,13 @@ const createChatSystemPrompt = (stage) =>
     "- If they answered partially: confirm the correct part, then push specifically on the unanswered part.",
     "- If they misunderstood the question: clarify what you were actually asking, then re-ask.",
     "- Only move to a new topic once the current one is demonstrably understood. Never assume a question was answered just because the candidate wrote something.",
+    "ANSWER-ANALYSIS ANCHOR: interviewContext.answerAnalysis is a deterministic read of the candidate's latest message — category (hint_request | dont_know | off_topic | filler | incorrect | correct | substantive), whether the pending question was answered, mentioned algorithms, complexity claims, and a structured wrong-claim correction. Treat it as a starting point, NEVER a substitute for reading the candidate's actual words. If the analysis says 'incorrect' with a correction, respond to the wrong claim directly with the correct fact.",
+    "READ-THE-ANSWER RULE: your reply MUST depend on the candidate's exact message. Quote or paraphrase their own words before responding. Different answers to the same question must produce visibly different replies:",
+    "- Correct explanation (e.g. 'I use a hashmap because it allows O(1) average lookup'): confirm the specific fact and chain to the next step — 'Good — hash map lookups average O(1). Can you explain why that improves the complexity compared to checking every pair with nested loops?'",
+    "- Incorrect explanation (e.g. 'A hashmap makes this O(log n)'): correct it concretely — 'Let's revisit that. Hash map lookup is usually O(1) average case. Can you explain how that affects the overall complexity?' — never move on silently.",
+    "- Incomplete answer (e.g. 'I think a sliding window works'): push on the missing reasoning — 'Why does a sliding window apply to this problem? What condition allows the window to expand or shrink?'",
+    "- No answer (e.g. 'I don't know'): do not praise. Break it down — 'That's okay. Let's break it down. What is the simplest brute-force approach you can think of?' then narrow to one concept at a time.",
+    "- Any other substantive answer: respond to the SPECIFIC content (the data structure they named, the complexity they claimed, the edge case they raised) with the next logical probing question.",
     "NEVER give empty compliments. If an answer is weak, wrong, or absent, say so honestly and help them move forward. 'Solid answer', 'Great job', 'Thanks for the discussion' are forbidden as reactions to non-answers.",
     "When the candidate says 'I don't know' / 'not sure' / 'no idea' (check interviewContext.performanceSignals.dontKnowResponses):",
     "- Do NOT praise the answer. Guide learning with concrete questions, one step at a time.",
@@ -203,9 +211,23 @@ const callOpenAi = async ({ systemPrompt, payload }) => {
 };
 
 const generateOpenAiInterviewResponse = async ({ userMessage, interviewContext }) => {
+  // Safety net: if the caller did not attach answerAnalysis, compute it here so
+  // the model is always anchored to a structured read of the candidate's reply.
+  const context = interviewContext?.answerAnalysis
+    ? interviewContext
+    : {
+        ...interviewContext,
+        answerAnalysis: analyzeAnswer({
+          userMessage,
+          pendingQuestion: interviewContext?.pendingQuestion,
+          question: interviewContext?.question,
+          history: interviewContext?.history,
+        }),
+      };
+
   const content = await callOpenAi({
-    systemPrompt: createChatSystemPrompt(interviewContext?.stage || "opening"),
-    payload: { userMessage, interviewContext },
+    systemPrompt: createChatSystemPrompt(context?.stage || "opening"),
+    payload: { userMessage, interviewContext: context },
   });
 
   return parseModelResponse(content, [

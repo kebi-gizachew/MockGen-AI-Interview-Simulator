@@ -82,6 +82,10 @@ export interface Question {
   difficulty: Difficulty;
   topic: string;
   company?: string | null;
+  // Every company known to ask this question (many-to-many).
+  companies?: string[] | null;
+  // Interview role relevance, e.g. ['Backend Engineer', 'Full Stack Engineer']
+  roles?: string[] | null;
   frequencyRank?: number | null;
   interviewFrequency?: string | null;
   functionName: string;
@@ -134,6 +138,12 @@ export interface CodeRunResult {
   runtimeMs?: number;
   memoryKb?: number | null;
   error?: string;
+}
+
+export interface PublicStats {
+  registeredUsers: number;
+  completedInterviews: number;
+  codeSubmissions: number;
 }
 
 export interface ApiResponse<T> {

@@ -3,10 +3,12 @@ const healthRoutes = require("./health.routes");
 const authRoutes = require("./auth.routes");
 const interviewRoutes = require("./interview.routes");
 const questionRoutes = require("./question.routes");
+const statsRoutes = require("./stats.routes");
 
 const router = express.Router();
 
 router.use(healthRoutes);
+router.use(statsRoutes);
 router.use("/auth", authRoutes);
 router.use("/interviews", interviewRoutes);
 router.use("/questions", questionRoutes);

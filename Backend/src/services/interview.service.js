@@ -144,7 +144,15 @@ const getSessionById = async ({
             },
           }
         : {}),
-      ...(includeQuestion ? { question: true } : {}),
+      ...(includeQuestion
+        ? {
+            question: {
+              include: {
+                companies: { include: { company: { select: { name: true } } } },
+              },
+            },
+          }
+        : {}),
       ...(includeSubmissions
         ? {
             codeSubmissions: {
@@ -157,6 +165,14 @@ const getSessionById = async ({
 
   if (!session) {
     throw new HttpError(404, "Interview session not found.");
+  }
+
+  // Expose the question's companies as a plain array of names (the join rows
+  // are internal to the many-to-many relation).
+  if (includeQuestion && session.question) {
+    session.question.companies = (session.question.companies || [])
+      .map((link) => link.company?.name)
+      .filter(Boolean);
   }
 
   return session;

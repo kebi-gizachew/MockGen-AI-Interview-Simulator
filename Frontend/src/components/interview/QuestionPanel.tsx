@@ -43,6 +43,15 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({ question }) => {
 
   const frequency = frequencyLabel(question.interviewFrequency);
 
+  // All companies known to ask this problem (falls back to the primary one).
+  const companies =
+    question.companies && question.companies.length > 0
+      ? question.companies
+      : question.company
+        ? [question.company]
+        : [];
+  const primaryCompany = question.company || companies[0] || null;
+
   return (
     <div className="glass-panel rounded-2xl border border-slate-800 h-full flex flex-col overflow-hidden">
       {/* Header */}
@@ -57,9 +66,17 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({ question }) => {
               <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/25">
                 {question.topic}
               </span>
-              {question.company && (
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/25">
-                  {question.company}
+              {companies.slice(0, 4).map((company) => (
+                <span
+                  key={company}
+                  className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/25"
+                >
+                  {company}
+                </span>
+              ))}
+              {companies.length > 4 && (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-700/40 text-slate-300 border border-slate-600/40">
+                  +{companies.length - 4}
                 </span>
               )}
               {frequency && (
@@ -67,7 +84,7 @@ export const QuestionPanel: React.FC<QuestionPanelProps> = ({ question }) => {
                   className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${frequencyClass(
                     question.interviewFrequency
                   )}`}
-                  title={`How often this problem is reported at ${question.company || 'the target company'}`}
+                  title={`How often this problem is reported at ${primaryCompany || 'the target company'}`}
                 >
                   {frequency}
                 </span>

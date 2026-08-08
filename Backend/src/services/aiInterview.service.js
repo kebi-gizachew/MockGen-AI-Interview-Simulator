@@ -2,6 +2,7 @@ const {
   generateInterviewResponse,
   generateFinalSummary,
 } = require("./ai/ai.service");
+const { analyzeAnswer } = require("./ai/answer-analysis");
 const interviewService = require("./interview.service");
 const messageService = require("./message.service");
 const questionService = require("./question.service");
@@ -16,12 +17,25 @@ const {
 
 const sanitizeQuestionForContext = (question) => {
   if (!question) return null;
+  // QuestionCompany join rows may or may not be loaded; normalize to names.
+  let companies = Array.isArray(question.companies)
+    ? question.companies
+        .map((c) =>
+          typeof c === "string" ? c : c && (c.company?.name || c.name || null)
+        )
+        .filter(Boolean)
+    : question.company
+      ? [question.company]
+      : [];
+  if (companies.length === 0 && question.company) companies = [question.company];
   return {
     title: question.title,
     description: question.description,
     difficulty: question.difficulty,
     topic: question.topic,
     company: question.company,
+    companies,
+    roles: Array.isArray(question.roles) ? question.roles : [],
     functionName: question.functionName,
     frequencyRank: question.frequencyRank ?? null,
     interviewFrequency: question.interviewFrequency ?? null,
@@ -115,6 +129,33 @@ const detectStage = (interviewContext) => {
 };
 
 const buildInterviewContext = (session, messages, { question, submissions } = {}) => {
+  const sanitizedQuestion = sanitizeQuestionForContext(question);
+
+  // The most recent assistant question still on the table. The AI must
+  // evaluate whether the candidate's latest reply actually answers it BEFORE
+  // generating a follow-up — and if not, re-engage the same topic.
+  const pendingQuestion = (() => {
+    const assistantMessages = messages.filter((m) => m.role === MESSAGE_ROLES.ASSISTANT);
+    const lastQuestion = [...assistantMessages].reverse().find((m) =>
+      /[?？]/.test(String(m.content || ""))
+    );
+    // Keep the TAIL of long messages (the actual question is asked at the
+    // end; the head is problem description/examples already in history).
+    return lastQuestion ? String(lastQuestion.content).slice(-2000) : null;
+  })();
+
+  // Deterministic classification of the candidate's latest answer so BOTH AI
+  // providers ground their next response in what the candidate actually said
+  // instead of a script (the exact message is passed separately as userMessage).
+  const answerAnalysis = analyzeAnswer({
+    userMessage: [...messages]
+      .reverse()
+      .find((m) => m.role === MESSAGE_ROLES.USER)?.content,
+    pendingQuestion,
+    question: sanitizedQuestion,
+    history: messages,
+  });
+
   const context = {
     sessionId: session.id,
     title: session.title,
@@ -124,7 +165,7 @@ const buildInterviewContext = (session, messages, { question, submissions } = {}
     language: session.language,
     durationMinutes: session.durationMinutes,
     status: session.status,
-    question: sanitizeQuestionForContext(question),
+    question: sanitizedQuestion,
     // Bound context size: only the most recent submissions, truncated.
     codeSubmissions: (submissions || [])
       .slice(-3)
@@ -147,19 +188,8 @@ const buildInterviewContext = (session, messages, { question, submissions } = {}
       .map((m) => String(m.content || ""))
       .filter((content) => /[?？]/.test(content))
       .slice(-10),
-    // Response-driven context: the most recent assistant question still on the
-    // table. The AI must evaluate whether the candidate's latest reply actually
-    // answers it BEFORE generating a follow-up — and if not, re-engage the same
-    // topic instead of moving on.
-    pendingQuestion: (() => {
-      const assistantMessages = messages.filter((m) => m.role === MESSAGE_ROLES.ASSISTANT);
-      const lastQuestion = [...assistantMessages].reverse().find((m) =>
-        /[?？]/.test(String(m.content || ""))
-      );
-      // Keep the TAIL of long messages (the actual question is asked at the
-      // end; the head is problem description/examples already in history).
-      return lastQuestion ? String(lastQuestion.content).slice(-2000) : null;
-    })(),
+    pendingQuestion,
+    answerAnalysis,
   };
 
   return {

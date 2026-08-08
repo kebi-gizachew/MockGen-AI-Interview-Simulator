@@ -2,6 +2,7 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { Button } from '../components/common/Button';
+import { StatsSection } from '../components/landing/StatsSection';
 import { Bot, Code2, BarChart3, ArrowRight, Sparkles, ShieldCheck, Zap, Target } from 'lucide-react';
 
 export const LandingPage: React.FC = () => {
@@ -98,6 +99,9 @@ export const LandingPage: React.FC = () => {
           </div>
         </div>
       </section>
+
+      {/* Live platform statistics (fetched from GET /api/stats) */}
+      <StatsSection />
 
       {/* Features */}
       <section className="max-w-6xl mx-auto px-4 sm:px-6 pb-20">

@@ -74,6 +74,38 @@ model InterviewSession {
   @@index([userId, status])
 }
 
+// A company whose real interview questions the platform simulates.
+model Company {
+  id            String           @id @default(cuid())
+  name          String           @unique
+  slug          String           @unique
+  questionLinks QuestionCompany[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+}
+
+// Many-to-many join between Question and Company.
+// A question belongs to every company known to ask it (e.g. Two Sum is asked
+// by Google, Amazon, Meta, ...). Each (question, company) pair carries its own
+// interview-frequency metadata because the same problem is asked with
+// different frequency at different companies.
+model QuestionCompany {
+  questionId         String
+  companyId          String
+  // frequencyRank: 1 = most frequently reported at this company
+  // interviewFrequency: "very_high" | "high" | "medium" | "low"
+  frequencyRank      Int?
+  interviewFrequency String?
+  question           Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  company            Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@id([questionId, companyId])
+  @@index([companyId])
+  @@index([questionId])
+}
+
 // LeetCode-style coding question used during an interview session.
 model Question {
   id           String             @id @default(cuid())
@@ -81,12 +113,18 @@ model Question {
   description  String
   difficulty   Difficulty
   topic        String
+  // Primary company (kept for display/legacy compatibility). The full set of
+  // companies that ask this question lives in the companies many-to-many link.
   company      String?
-  // Company interview frequency metadata (drives realistic per-company ranking)
+  // Company interview frequency metadata for the PRIMARY company (drives
+  // realistic per-company ranking). Per-company values for every associated
+  // company live on the QuestionCompany join rows.
   // frequencyRank: 1 = most frequently reported at this company
   // interviewFrequency: "very_high" | "high" | "medium" | "low"
   frequencyRank        Int?
   interviewFrequency   String?
+  // Interview role relevance, e.g. ["Backend Engineer", "Full Stack Engineer"]
+  roles        Json?
   // Name of the function candidates must implement (used by the test harness)
   functionName String
   // Optional per-argument type hints for the execution harness, e.g. ["tree", "int"]
@@ -98,6 +136,7 @@ model Question {
   // Starter code templates keyed by language id (javascript, typescript, python, java, cpp)
   starterCode  Json
   sessions     InterviewSession[]
+  companies    QuestionCompany[]
   createdAt    DateTime           @default(now())
   updatedAt    DateTime           @updatedAt
 }
