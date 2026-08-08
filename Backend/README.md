@@ -51,8 +51,9 @@ npm run dev                 # Start on http://localhost:5000
 | `JWT_SECRET` | **Yes** | — | JWT signing secret |
 | `JWT_EXPIRES_IN` | No | `7d` | Token expiry |
 | `DATABASE_URL` | **Yes** | — | PostgreSQL connection string |
-| `OPENAI_API_KEY` | No | — | If empty, mock AI provider is used |
-| `OPENAI_MODEL` | No | `gpt-4o-mini` | OpenAI model name |
+| `AI_PROVIDER` | No | `gemini` | AI provider: `gemini` (default) or `mock` |
+| `GEMINI_API_KEY` | No | — | If empty, mock AI provider is used |
+| `GEMINI_MODEL` | No | `gemini-3.6-flash` | Gemini model name |
 
 ## API Reference
 

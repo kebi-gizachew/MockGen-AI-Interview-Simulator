@@ -6,10 +6,19 @@ const {
   generateMockFinalSummary,
 } = require("./providers/mock.provider");
 const {
-  generateOpenAiInterviewResponse,
-  generateOpenAiOpeningQuestion,
-  generateOpenAiFinalSummary,
-} = require("./providers/openai.provider");
+  generateGeminiInterviewResponse,
+  generateGeminiOpeningQuestion,
+  generateGeminiFinalSummary,
+} = require("./providers/gemini.provider");
+
+// Boot-time visibility: log which provider is active so misconfiguration is
+// obvious in the server logs (a mock response otherwise looks identical to
+// a Gemini response).
+const activeProvider =
+  env.aiProvider === "mock" || !env.geminiApiKey
+    ? "mock"
+    : `gemini (${env.geminiModel})`;
+console.log(`[ai] active provider: ${activeProvider}`);
 
 const isPlainObject = (value) =>
   value !== null && typeof value === "object" && !Array.isArray(value);
@@ -38,12 +47,15 @@ const validateContext = (interviewContext) => {
   }
 };
 
-const executeWithFallback = async (openAiFn, mockFn, args) => {
-  if (env.openAiApiKey) {
+// Gemini is used when AI_PROVIDER is not "mock" and a GEMINI_API_KEY is
+// configured. Any Gemini failure falls back to the mock provider so the
+// interview never breaks (same behavior as the previous OpenAI provider).
+const executeWithFallback = async (geminiFn, mockFn, args) => {
+  if (env.aiProvider !== "mock" && env.geminiApiKey) {
     try {
-      return await openAiFn(args);
+      return await geminiFn(args);
     } catch (error) {
-      console.warn("OpenAI provider failed, falling back to mock provider:", error.message);
+      console.warn("Gemini provider failed, falling back to mock provider:", error.message);
       return mockFn(args);
     }
   }
@@ -53,7 +65,7 @@ const executeWithFallback = async (openAiFn, mockFn, args) => {
 const generateInterviewResponse = async ({ userMessage, interviewContext }) => {
   validateInput({ userMessage, interviewContext });
   return executeWithFallback(
-    generateOpenAiInterviewResponse,
+    generateGeminiInterviewResponse,
     generateMockInterviewResponse,
     { userMessage, interviewContext }
   );
@@ -62,7 +74,7 @@ const generateInterviewResponse = async ({ userMessage, interviewContext }) => {
 const generateOpeningQuestion = async ({ interviewContext }) => {
   validateContext(interviewContext);
   return executeWithFallback(
-    generateOpenAiOpeningQuestion,
+    generateGeminiOpeningQuestion,
     generateMockOpeningQuestion,
     { interviewContext }
   );
@@ -71,7 +83,7 @@ const generateOpeningQuestion = async ({ interviewContext }) => {
 const generateFinalSummary = async ({ interviewContext }) => {
   validateContext(interviewContext);
   return executeWithFallback(
-    generateOpenAiFinalSummary,
+    generateGeminiFinalSummary,
     generateMockFinalSummary,
     { interviewContext }
   );

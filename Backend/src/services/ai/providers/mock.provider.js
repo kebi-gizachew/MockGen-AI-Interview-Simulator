@@ -10,7 +10,7 @@ const {
 } = require("../answer-analysis");
 
 /**
- * Mock AI provider — used when no OPENAI_API_KEY is configured.
+ * Mock AI provider — used when AI_PROVIDER=mock or no GEMINI_API_KEY is configured.
  *
  * Unlike a real LLM, this provider computes everything from the actual
  * interview evidence (performance signals, submitted code test results,

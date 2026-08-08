@@ -9,8 +9,11 @@ const env = {
   databaseUrl: process.env.DATABASE_URL,
   jwtSecret: process.env.JWT_SECRET,
   jwtExpiresIn: process.env.JWT_EXPIRES_IN || "7d",
-  openAiApiKey: process.env.OPENAI_API_KEY,
-  openAiModel: process.env.OPENAI_MODEL || "gpt-4o-mini",
+  // AI provider: "gemini" (default) or "mock". When AI_PROVIDER=mock or
+  // no GEMINI_API_KEY is configured, the mock provider is used.
+  aiProvider: process.env.AI_PROVIDER || "gemini",
+  geminiApiKey: process.env.GEMINI_API_KEY,
+  geminiModel: process.env.GEMINI_MODEL || "gemini-3.6-flash",
   // Frontend base URL (used for verification / OAuth redirect links)
   frontendUrl: process.env.FRONTEND_URL || "http://localhost:5173",
   // SMTP (email verification). Optional: when absent, emails are logged.

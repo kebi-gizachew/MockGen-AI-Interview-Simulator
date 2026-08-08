@@ -1,8 +1,21 @@
+/**
+ * Gemini AI provider.
+ *
+ * Calls Google's Gemini API through its OpenAI-compatible endpoint
+ * (https://generativelanguage.googleapis.com/v1beta/openai/) using the
+ * official OpenAI Node SDK, so the request/response contract is identical
+ * to a standard OpenAI call. Configured via env: AI_PROVIDER,
+ * GEMINI_API_KEY, GEMINI_MODEL.
+ */
+
 const OpenAI = require("openai");
 const env = require("../../../config/env");
 const { AI_RESPONSE_TYPES } = require("../../../constants/interview.constants");
 const { RECOMMENDATIONS, recommendationFromScore } = require("../../../utils/recommendation");
 const { analyzeAnswer } = require("../answer-analysis");
+
+const GEMINI_OPENAI_COMPAT_BASE_URL =
+  "https://generativelanguage.googleapis.com/v1beta/openai/";
 
 const STAGE_GUIDANCE = {
   opening: [
@@ -120,16 +133,19 @@ const createSummarySystemPrompt = () =>
     `- "recommendation" must be exactly one of: ${Object.values(RECOMMENDATIONS).join(" | ")} and must match the score band above.`,
   ].join("\n");
 
-let openaiClientInstance = null;
+let geminiClientInstance = null;
 
-const getOpenAiClient = () => {
-  if (!env.openAiApiKey) {
-    throw new Error("OPENAI_API_KEY is missing.");
+const getGeminiClient = () => {
+  if (!env.geminiApiKey) {
+    throw new Error("GEMINI_API_KEY is missing.");
   }
-  if (!openaiClientInstance) {
-    openaiClientInstance = new OpenAI({ apiKey: env.openAiApiKey });
+  if (!geminiClientInstance) {
+    geminiClientInstance = new OpenAI({
+      apiKey: env.geminiApiKey,
+      baseURL: GEMINI_OPENAI_COMPAT_BASE_URL,
+    });
   }
-  return openaiClientInstance;
+  return geminiClientInstance;
 };
 
 const parseModelResponse = (rawText, allowedTypes) => {
@@ -141,7 +157,7 @@ const parseModelResponse = (rawText, allowedTypes) => {
       .trim();
     parsed = JSON.parse(cleanedText);
   } catch (error) {
-    throw new Error("OpenAI response was not valid JSON.");
+    throw new Error("Gemini response was not valid JSON.");
   }
 
   if (
@@ -150,7 +166,7 @@ const parseModelResponse = (rawText, allowedTypes) => {
     typeof parsed.message !== "string" ||
     typeof parsed.score !== "number"
   ) {
-    throw new Error("OpenAI response JSON does not match expected structure.");
+    throw new Error("Gemini response JSON does not match expected structure.");
   }
 
   const clamp = (value, fallback) => {
@@ -190,10 +206,10 @@ const parseModelResponse = (rawText, allowedTypes) => {
   };
 };
 
-const callOpenAi = async ({ systemPrompt, payload }) => {
-  const openai = getOpenAiClient();
-  const completion = await openai.chat.completions.create({
-    model: env.openAiModel,
+const callGemini = async ({ systemPrompt, payload }) => {
+  const gemini = getGeminiClient();
+  const completion = await gemini.chat.completions.create({
+    model: env.geminiModel,
     temperature: 0.3,
     response_format: { type: "json_object" },
     messages: [
@@ -204,13 +220,13 @@ const callOpenAi = async ({ systemPrompt, payload }) => {
 
   const content = completion?.choices?.[0]?.message?.content;
   if (!content) {
-    throw new Error("OpenAI did not return any content.");
+    throw new Error("Gemini did not return any content.");
   }
 
   return content;
 };
 
-const generateOpenAiInterviewResponse = async ({ userMessage, interviewContext }) => {
+const generateGeminiInterviewResponse = async ({ userMessage, interviewContext }) => {
   // Safety net: if the caller did not attach answerAnalysis, compute it here so
   // the model is always anchored to a structured read of the candidate's reply.
   const context = interviewContext?.answerAnalysis
@@ -225,7 +241,7 @@ const generateOpenAiInterviewResponse = async ({ userMessage, interviewContext }
         }),
       };
 
-  const content = await callOpenAi({
+  const content = await callGemini({
     systemPrompt: createChatSystemPrompt(context?.stage || "opening"),
     payload: { userMessage, interviewContext: context },
   });
@@ -236,8 +252,8 @@ const generateOpenAiInterviewResponse = async ({ userMessage, interviewContext }
   ]);
 };
 
-const generateOpenAiOpeningQuestion = async ({ interviewContext }) => {
-  const content = await callOpenAi({
+const generateGeminiOpeningQuestion = async ({ interviewContext }) => {
+  const content = await callGemini({
     systemPrompt: createOpeningSystemPrompt(),
     payload: { interviewContext },
   });
@@ -245,8 +261,8 @@ const generateOpenAiOpeningQuestion = async ({ interviewContext }) => {
   return parseModelResponse(content, [AI_RESPONSE_TYPES.QUESTION]);
 };
 
-const generateOpenAiFinalSummary = async ({ interviewContext }) => {
-  const content = await callOpenAi({
+const generateGeminiFinalSummary = async ({ interviewContext }) => {
+  const content = await callGemini({
     systemPrompt: createSummarySystemPrompt(),
     payload: { interviewContext },
   });
@@ -255,7 +271,7 @@ const generateOpenAiFinalSummary = async ({ interviewContext }) => {
 };
 
 module.exports = {
-  generateOpenAiInterviewResponse,
-  generateOpenAiOpeningQuestion,
-  generateOpenAiFinalSummary,
+  generateGeminiInterviewResponse,
+  generateGeminiOpeningQuestion,
+  generateGeminiFinalSummary,
 };
