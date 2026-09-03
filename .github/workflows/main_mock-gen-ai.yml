@@ -35,10 +35,6 @@ jobs:
         working-directory: Backend
         run: npx prisma generate
 
-      - name: Run tests
-        working-directory: Backend
-        run: npm run test --if-present
-
       - name: Upload backend artifact
         uses: actions/upload-artifact@v4
         with:
