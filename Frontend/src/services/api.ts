@@ -40,7 +40,7 @@ export const apiFetch = async <T>(
   } catch (err: unknown) {
     if (err instanceof TypeError && err.message.includes('fetch')) {
       throw new Error(
-        'Unable to connect to the backend server. Please verify your backend server is running on http://localhost:5000.'
+        `Unable to connect to the backend server at ${API_BASE_URL}. Please verify the server is running and accessible.`
       );
     }
     throw err;
